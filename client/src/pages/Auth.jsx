@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import Logo from '../components/Logo';
+import GoogleButton from '../components/GoogleButton';
 import ThemeToggle from '../components/ThemeToggle';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -48,6 +49,20 @@ export default function Auth({ mode }) {
     }
   }
 
+  // Google sign-in handles both "login" and "register": new emails get an account automatically.
+  async function handleGoogle(credential) {
+    setBusy(true);
+    setError('');
+    try {
+      await signIn(await api.googleLogin(credential));
+      navigate('/chat');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="auth-page">
       <header className="auth-top">
@@ -70,6 +85,8 @@ export default function Auth({ mode }) {
                 : 'Log in to get back to your private rooms.'}
             </p>
           </div>
+
+          <GoogleButton mode={mode} onCredential={handleGoogle} onError={setError} disabled={busy} />
 
           {isRegister ? (
             <>

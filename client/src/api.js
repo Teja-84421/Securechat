@@ -23,6 +23,8 @@ async function request(path, { method = 'GET', body } = {}) {
 export const api = {
   register: (body) => request('/auth/register', { method: 'POST', body }),
   login: (body) => request('/auth/login', { method: 'POST', body }),
+  googleConfig: () => request('/auth/google-config'),
+  googleLogin: (credential) => request('/auth/google', { method: 'POST', body: { credential } }),
   me: () => request('/auth/me'),
   rooms: () => request('/rooms'),
   createRoom: () => request('/rooms', { method: 'POST', body: {} }),
