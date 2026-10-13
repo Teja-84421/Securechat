@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import Logo from '../components/Logo';
 import GoogleButton from '../components/GoogleButton';
+import GoogleSetupForm from '../components/GoogleSetupForm';
 import ThemeToggle from '../components/ThemeToggle';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -16,6 +17,7 @@ export default function Auth({ mode }) {
   const [form, setForm] = useState({ username: '', email: '', password: '', identifier: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [setup, setSetup] = useState(null); // set when a NEW Google user must still pick a username + password
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -54,7 +56,9 @@ export default function Auth({ mode }) {
     setBusy(true);
     setError('');
     try {
-      await signIn(await api.googleLogin(credential));
+      const data = await api.googleLogin(credential);
+      if (data.needsSetup) return setSetup(data);
+      await signIn(data);
       navigate('/chat');
     } catch (err) {
       setError(err.message);
@@ -71,6 +75,9 @@ export default function Auth({ mode }) {
       </header>
 
       <main className="auth-main">
+        {setup ? (
+          <GoogleSetupForm setup={setup} onCancel={() => setSetup(null)} />
+        ) : (
         <form className="auth-card" onSubmit={handleSubmit} noValidate>
           <div className="seg" role="tablist" aria-label="Account">
             <Link role="tab" aria-selected={!isRegister} className={!isRegister ? 'on' : ''} to="/login">Login</Link>
@@ -119,6 +126,7 @@ export default function Auth({ mode }) {
           </button>
           <p className="auth-note">After signing in you can create a room, or join one with a code.</p>
         </form>
+        )}
       </main>
     </div>
   );

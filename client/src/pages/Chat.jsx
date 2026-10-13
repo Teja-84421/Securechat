@@ -11,6 +11,7 @@ import MessageMenu from '../components/MessageMenu';
 import VoiceRecorderBar from '../components/VoiceRecorderBar';
 import RoomDialog from '../components/RoomDialog';
 import InfoPanel from '../components/InfoPanel';
+import ProfileDialog from '../components/ProfileDialog';
 import EmojiPicker from '../components/EmojiPicker';
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // keep in sync with server/socket.js
@@ -49,6 +50,7 @@ export default function Chat() {
   const [recording, setRecording] = useState(false);
   const [roomDialog, setRoomDialog] = useState(null); // null | 'create' | 'join'
   const [infoOpen, setInfoOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
 
   const socketRef = useRef(null);
@@ -450,6 +452,7 @@ export default function Chat() {
         connected={connected}
         unreadTotal={unreadTotal}
         onNewRoom={() => setRoomDialog('create')}
+        onProfile={() => setProfileOpen(true)}
         onSignOut={signOut}
       />
 
@@ -707,6 +710,10 @@ export default function Chat() {
           onClose={() => setInfoOpen(false)}
           onLeave={closeActiveRoom}
         />
+      )}
+
+      {profileOpen && (
+        <ProfileDialog user={user} connected={connected} onClose={() => setProfileOpen(false)} onSignOut={signOut} />
       )}
 
       {roomDialog && (

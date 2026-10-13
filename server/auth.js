@@ -7,6 +7,19 @@ export function signToken(user) {
   });
 }
 
+// Short-lived token that proves Google verified this email, while the person picks a
+// username + password. It is signed with a different key than session tokens, so it
+// cannot be used to log in or to open a socket.
+const setupSecret = `${config.jwtSecret}:google-signup`;
+
+export function signSetupToken({ googleId, email }) {
+  return jwt.sign({ googleId, email }, setupSecret, { expiresIn: '15m' });
+}
+
+export function verifySetupToken(token) {
+  return jwt.verify(token, setupSecret);
+}
+
 // Express middleware: protects REST routes
 export function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';

@@ -25,6 +25,7 @@ export const api = {
   login: (body) => request('/auth/login', { method: 'POST', body }),
   googleConfig: () => request('/auth/google-config'),
   googleLogin: (credential) => request('/auth/google', { method: 'POST', body: { credential } }),
+  googleComplete: (body) => request('/auth/google/complete', { method: 'POST', body }),
   me: () => request('/auth/me'),
   rooms: () => request('/rooms'),
   createRoom: () => request('/rooms', { method: 'POST', body: {} }),

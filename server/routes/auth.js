@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { OAuth2Client } from 'google-auth-library';
 import { config } from '../config.js';
 import { pool } from '../db.js';
-import { signToken, requireAuth } from '../auth.js';
+import { signToken, signSetupToken, verifySetupToken, requireAuth } from '../auth.js';
 
 const router = Router();
 
@@ -151,25 +151,58 @@ router.post('/google', limiter, async (req, res) => {
       return res.json({ token: signToken(user), user, isNew: false });
     }
 
-    // 2) First time: create the account (retry if a username is grabbed at the same instant)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const username = await makeUsername(email);
-      try {
-        const [result] = await pool.query(
-          'INSERT INTO users (username, email, password_hash, google_id) VALUES (?, ?, NULL, ?)',
-          [username, email, googleId]
-        );
-        const user = { id: result.insertId, username, email, public_key: null };
-        return res.status(201).json({ token: signToken(user), user, isNew: true });
-      } catch (err) {
-        if (err.code !== 'ER_DUP_ENTRY') throw err;
-        const [again] = await pool.query('SELECT id FROM users WHERE google_id = ? OR email = ?', [googleId, email]);
-        if (again.length) return res.status(409).json({ error: 'Please try signing in again' });
-      }
-    }
-    res.status(500).json({ error: 'Could not create your account. Please try again.' });
+    // 2) First time: don't create the account yet. The client now asks for a username and
+    //    password, then calls /google/complete with this short-lived setup token.
+    res.json({
+      needsSetup: true,
+      setupToken: signSetupToken({ googleId, email }),
+      email,
+      suggestedUsername: await makeUsername(email),
+    });
   } catch (err) {
     console.error('Google sign-in error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Step 2 of Google sign-up: the person chose a username and password.
+router.post('/google/complete', limiter, async (req, res) => {
+  try {
+    const { setupToken, username, password } = req.body || {};
+    let setup;
+    try {
+      setup = verifySetupToken(typeof setupToken === 'string' ? setupToken : '');
+    } catch {
+      return res.status(401).json({ error: 'Your sign-up session expired. Click "Continue with Google" again.' });
+    }
+    if (typeof username !== 'string' || !USERNAME_RE.test(username))
+      return res.status(400).json({ error: 'Username must be 3-20 letters, numbers or underscores' });
+    if (typeof password !== 'string' || password.length < 8 || password.length > 72)
+      return res.status(400).json({ error: 'Password must be 8-72 characters' });
+
+    const [taken] = await pool.query(
+      'SELECT username, google_id, email FROM users WHERE username = ? OR google_id = ? OR email = ?',
+      [username, setup.googleId, setup.email]
+    );
+    if (taken.some((r) => r.google_id === setup.googleId || r.email === setup.email))
+      return res.status(409).json({ error: 'This Google account already has an account. Please sign in.' });
+    if (taken.length) return res.status(409).json({ error: 'That username is already taken' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    let result;
+    try {
+      [result] = await pool.query(
+        'INSERT INTO users (username, email, password_hash, google_id) VALUES (?, ?, ?, ?)',
+        [username, setup.email, passwordHash, setup.googleId]
+      );
+    } catch (err) {
+      if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'That username is already taken' });
+      throw err;
+    }
+    const user = { id: result.insertId, username, email: setup.email, public_key: null };
+    res.status(201).json({ token: signToken(user), user, isNew: true });
+  } catch (err) {
+    console.error('Google complete error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -178,11 +211,14 @@ router.post('/google', limiter, async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, username, email, public_key FROM users WHERE id = ?',
+      `SELECT id, username, email, public_key, created_at,
+              google_id IS NOT NULL AS has_google, password_hash IS NOT NULL AS has_password
+       FROM users WHERE id = ?`,
       [req.user.id]
     );
     if (!rows[0]) return res.status(401).json({ error: 'User no longer exists' });
-    res.json({ user: rows[0] });
+    const { has_google, has_password, ...rest } = rows[0];
+    res.json({ user: { ...rest, has_google: !!has_google, has_password: !!has_password } });
   } catch (err) {
     console.error('Me error:', err.message);
     res.status(500).json({ error: 'Server error' });

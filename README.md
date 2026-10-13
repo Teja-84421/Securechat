@@ -12,7 +12,8 @@ Register → Login → User list → Real-time chat → Encrypt → Send ciphert
 
 - Landing page with Login / Register and a short explanation of encryption
 - Registration and login (username or email) with bcrypt-hashed passwords and JWT sessions
-- **"Continue with Google"** sign-in / sign-up (optional, see *Google sign-in setup*)
+- **"Continue with Google"** sign-in / sign-up (optional, see *Google sign-in setup*); new Google users choose a username and password
+- **Profile** dialog with your account details
 - User list, user search, online/offline status, typing indicator, message timestamps, unread badges
 - One-to-one real-time messaging over Socket.IO (WebSocket)
 - Client-side AES-256-GCM encryption with a fresh random IV for every message
@@ -116,11 +117,20 @@ Skip this and the app works exactly as before; the Google button just won't appe
    nullable automatically.
 
 How it works: the browser gets a signed ID token from Google and sends it to `POST /api/auth/google`. The server
-verifies the signature, expiry and audience with `google-auth-library`, requires a *verified* email, then:
-an existing Google user is logged in; an existing email/password account with the same email is linked to Google
-(same username, rooms and history); a new email gets a new account with a username generated from the email.
-The server then issues its normal JWT, so rooms, sockets and encryption are untouched. Google accounts have no password
-(`password_hash` is `NULL`).
+verifies the signature, expiry and audience with `google-auth-library` and requires a *verified* email, then:
+
+- **Returning Google user:** logged in straight away.
+- **Existing email/password account with the same email:** linked to Google and logged in (same username, rooms and history).
+- **Brand-new email:** no account is created yet. The server returns a short-lived (15 min) setup token, the app shows a
+  **"Finish your account"** form, and the person chooses a **username and password**. Submitting it calls
+  `POST /api/auth/google/complete`, which creates the account. The password also lets them log in without Google later.
+
+The server then issues its normal JWT, so rooms, sockets and encryption are untouched.
+
+### My profile
+
+Click **Profile** in the side rail (bottom bar on phones) or your avatar to see your username, email, how you sign in
+(Google / password), when you joined, and whether your encryption keys are active in this browser. Log out is in there too.
 
 > Encryption keys are still created per browser (see tradeoff 2): signing in with Google on a new device
 > generates a new key pair, exactly like a password login on a new device.

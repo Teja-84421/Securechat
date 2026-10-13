@@ -4,7 +4,7 @@ import Avatar from './Avatar';
 import ThemeToggle from './ThemeToggle';
 
 // Slim navigation rail on desktop, bottom tab bar on phones
-export default function Rail({ user, connected, unreadTotal, onNewRoom, onSignOut }) {
+export default function Rail({ user, connected, unreadTotal, onNewRoom, onProfile, onSignOut }) {
   return (
     <nav className="rail" aria-label="Main">
       <span className="rail-logo"><Logo size={34} text={false} /></span>
@@ -18,6 +18,10 @@ export default function Rail({ user, connected, unreadTotal, onNewRoom, onSignOu
           <Icon name="key" size={22} />
           <span>Rooms</span>
         </button>
+        <button type="button" className="rail-btn" onClick={onProfile} aria-label="My profile" title="My profile">
+          <Icon name="user" size={22} />
+          <span>Profile</span>
+        </button>
       </div>
       <div className="rail-foot">
         <ThemeToggle className="rail-btn" withLabel />
@@ -25,9 +29,9 @@ export default function Rail({ user, connected, unreadTotal, onNewRoom, onSignOu
           <Icon name="logout" size={22} />
           <span>Exit</span>
         </button>
-        <span className="rail-me" title={`${user.username}, ${connected ? 'connected' : 'reconnecting'}`}>
+        <button type="button" className="rail-me" onClick={onProfile} aria-label="My profile" title={`${user.username}, ${connected ? 'connected' : 'reconnecting'}`}>
           <Avatar name={user.username} size={38} online={connected} />
-        </span>
+        </button>
       </div>
     </nav>
   );
