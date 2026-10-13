@@ -18,6 +18,15 @@ export const config = {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'securechat',
+    // Hosted MySQL (Aiven, Railway, ...) usually requires an encrypted connection.
+    // DB_SSL=true turns it on; DB_SSL_CA (optional) is the provider's CA certificate text.
+    ...(process.env.DB_SSL === 'true'
+      ? {
+          ssl: process.env.DB_SSL_CA
+            ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n'), rejectUnauthorized: true }
+            : { rejectUnauthorized: false },
+        }
+      : {}),
   },
 };
 

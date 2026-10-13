@@ -2,12 +2,16 @@
 // Tradeoff: the JWT lives in localStorage (simple, but readable by any XSS bug).
 const TOKEN_KEY = 'securechat_token';
 
+// Empty in development (the Vite proxy forwards /api). When the frontend and backend are
+// deployed separately, set VITE_API_URL to the backend address, e.g. https://securechat-api.onrender.com
+export const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
 
 async function request(path, { method = 'GET', body } = {}) {
   const token = getToken();
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_URL}/api${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',

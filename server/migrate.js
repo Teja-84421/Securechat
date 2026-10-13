@@ -14,6 +14,38 @@ async function columnInfo(table, column) {
 }
 
 export async function migrate() {
+  // Fresh database (e.g. a new hosted MySQL): create the base tables, so nobody has to run schema.sql by hand.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      username      VARCHAR(20)  NOT NULL UNIQUE,
+      email         VARCHAR(100) NOT NULL UNIQUE,
+      password_hash VARCHAR(100) NULL,
+      google_id     VARCHAR(40)  NULL UNIQUE,
+      public_key    TEXT NULL,
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      sender_id   INT NOT NULL,
+      receiver_id INT NOT NULL,
+      type        ENUM('text','voice') NOT NULL DEFAULT 'text',
+      duration_ms INT NULL,
+      ciphertext  MEDIUMTEXT NOT NULL,
+      iv          VARCHAR(24) NOT NULL,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      edited_at   DATETIME NULL DEFAULT NULL,
+      deleted_at  DATETIME NULL DEFAULT NULL,
+      hidden_by_sender   TINYINT(1) NOT NULL DEFAULT 0,
+      hidden_by_receiver TINYINT(1) NOT NULL DEFAULT 0,
+      FOREIGN KEY (sender_id)   REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_conversation (sender_id, receiver_id, created_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+
   const newColumns = [
     ['type', "ENUM('text','voice') NOT NULL DEFAULT 'text'"],
     ['duration_ms', 'INT NULL'],

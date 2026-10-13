@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { api, getToken } from '../api';
+import { api, getToken, API_URL } from '../api';
 import { useAuth } from '../AuthContext';
 import { encryptMessage, decryptMessage, encryptVoice, decryptVoice } from '../crypto';
 import Rail from '../components/Rail';
@@ -134,7 +134,7 @@ export default function Chat() {
   // ---- Socket.IO connection (JWT sent in the handshake) ----
   useEffect(() => {
     loadRooms();
-    const socket = io({ auth: { token: getToken() } });
+    const socket = io(API_URL || undefined, { auth: { token: getToken() } });
     socketRef.current = socket;
 
     socket.on('connect', () => {

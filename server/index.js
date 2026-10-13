@@ -20,6 +20,7 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
+app.set('trust proxy', 1); // behind Render's load balancer: use the real client IP for rate limiting
 app.use(helmet());
 app.use(cors({ origin: config.clientUrl }));
 app.use(express.json({ limit: '10kb' }));
