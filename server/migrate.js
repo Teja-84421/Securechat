@@ -6,7 +6,7 @@ import { generateCode, pairKey } from './peers.js';
 
 async function columnInfo(table, column) {
   const [rows] = await pool.query(
-    `SELECT DATA_TYPE FROM information_schema.COLUMNS
+    `SELECT DATA_TYPE, IS_NULLABLE FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
     [table, column]
   );
@@ -27,6 +27,17 @@ export async function migrate() {
       await pool.query(`ALTER TABLE messages ADD COLUMN ${name} ${definition}`);
       console.log(`Database upgraded: messages.${name} added`);
     }
+  }
+
+  // Google sign-in: accounts created through Google have no password.
+  if (!(await columnInfo('users', 'google_id'))) {
+    await pool.query('ALTER TABLE users ADD COLUMN google_id VARCHAR(40) NULL UNIQUE');
+    console.log('Database upgraded: users.google_id added');
+  }
+  const pw = await columnInfo('users', 'password_hash');
+  if (pw && pw.IS_NULLABLE === 'NO') {
+    await pool.query('ALTER TABLE users MODIFY password_hash VARCHAR(100) NULL');
+    console.log('Database upgraded: users.password_hash can now be NULL (Google accounts)');
   }
 
   // Voice messages are far larger than the 64 KB a TEXT column can hold.

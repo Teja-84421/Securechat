@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS users (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   username      VARCHAR(20)  NOT NULL UNIQUE,
   email         VARCHAR(100) NOT NULL UNIQUE,
-  password_hash VARCHAR(100) NOT NULL,          -- bcrypt hash, never the password
+  password_hash VARCHAR(100) NULL,              -- bcrypt hash, never the password. NULL for Google-only accounts
+  google_id     VARCHAR(40)  NULL UNIQUE,       -- Google account ID ("sub"). NULL for password-only accounts
   public_key    TEXT NULL,                      -- ECDH public key (JWK). Safe to share.
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
+import { OAuth2Client } from 'google-auth-library';
+import { config } from '../config.js';
 import { pool } from '../db.js';
 import { signToken, requireAuth } from '../auth.js';
 
@@ -12,6 +14,9 @@ const limiter = rateLimit({
   max: 30,
   message: { error: 'Too many attempts. Try again in a few minutes.' },
 });
+
+// Only created when GOOGLE_CLIENT_ID is set in .env
+const googleClient = config.googleClientId ? new OAuth2Client(config.googleClientId) : null;
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,6 +61,8 @@ router.post('/login', limiter, async (req, res) => {
       [identifier, identifier.toLowerCase()]
     );
     const row = rows[0];
+    if (row && !row.password_hash)
+      return res.status(401).json({ error: 'This account uses Google. Use the "Continue with Google" button.' });
     const ok = row && (await bcrypt.compare(password, row.password_hash));
     if (!ok) return res.status(401).json({ error: 'Invalid username/email or password' });
 
@@ -63,6 +70,106 @@ router.post('/login', limiter, async (req, res) => {
     res.json({ token: signToken(user), user });
   } catch (err) {
     console.error('Login error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ---------------------------------------------------------------- Google sign-in
+// Flow: the browser gets a signed Google ID token (a JWT) from Google, sends it here,
+// and we verify its signature, audience (our client ID) and expiry with Google's public
+// keys. We never see the user's Google password. Then we log in / create the account
+// and return our own normal session token, so everything after this is unchanged.
+
+// The client asks which Google client ID to use, so it only has to be set once (.env).
+router.get('/google-config', (req, res) => {
+  res.json({ clientId: googleClient ? config.googleClientId : null });
+});
+
+// Builds a valid, unused username (3-20 letters/numbers/underscores) from the email.
+async function makeUsername(email) {
+  let base = email
+    .split('@')[0]
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 15);
+  if (base.length < 3) base = (base + 'user').slice(0, 15);
+
+  for (let i = 0; i < 10; i++) {
+    const candidate = i === 0 ? base : `${base}_${Math.floor(1000 + Math.random() * 9000)}`;
+    const [taken] = await pool.query('SELECT 1 FROM users WHERE username = ?', [candidate]);
+    if (!taken.length) return candidate;
+  }
+  return `user_${Date.now().toString(36)}`.slice(0, 20);
+}
+
+router.post('/google', limiter, async (req, res) => {
+  if (!googleClient)
+    return res.status(501).json({ error: 'Google sign-in is not set up on this server' });
+
+  try {
+    const { credential } = req.body || {};
+    if (typeof credential !== 'string' || credential.length < 20 || credential.length > 4096)
+      return res.status(400).json({ error: 'Missing Google credential' });
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: config.googleClientId,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      return res.status(401).json({ error: 'Google sign-in failed. Please try again.' });
+    }
+
+    if (!payload?.sub || !payload.email)
+      return res.status(401).json({ error: 'Google did not return an email address' });
+    if (!payload.email_verified)
+      return res.status(401).json({ error: 'Your Google email address is not verified' });
+
+    const googleId = payload.sub;
+    const email = payload.email.toLowerCase();
+    if (email.length > 100) return res.status(400).json({ error: 'Email address is too long' });
+
+    const [rows] = await pool.query(
+      'SELECT id, username, email, public_key, google_id FROM users WHERE google_id = ? OR email = ?',
+      [googleId, email]
+    );
+    // Prefer the row already linked to this Google account, otherwise the one with this email.
+    const row = rows.find((r) => r.google_id === googleId) || rows.find((r) => r.email === email);
+
+    // 1) Returning Google user, or an existing email/password account signing in with Google
+    if (row) {
+      if (row.google_id && row.google_id !== googleId)
+        return res.status(409).json({ error: 'This email is linked to a different Google account' });
+      if (!row.google_id) {
+        // Same (Google-verified) email as an existing account: link them, keep their username/rooms.
+        await pool.query('UPDATE users SET google_id = ? WHERE id = ?', [googleId, row.id]);
+      }
+      const user = { id: row.id, username: row.username, email: row.email, public_key: row.public_key };
+      return res.json({ token: signToken(user), user, isNew: false });
+    }
+
+    // 2) First time: create the account (retry if a username is grabbed at the same instant)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const username = await makeUsername(email);
+      try {
+        const [result] = await pool.query(
+          'INSERT INTO users (username, email, password_hash, google_id) VALUES (?, ?, NULL, ?)',
+          [username, email, googleId]
+        );
+        const user = { id: result.insertId, username, email, public_key: null };
+        return res.status(201).json({ token: signToken(user), user, isNew: true });
+      } catch (err) {
+        if (err.code !== 'ER_DUP_ENTRY') throw err;
+        const [again] = await pool.query('SELECT id FROM users WHERE google_id = ? OR email = ?', [googleId, email]);
+        if (again.length) return res.status(409).json({ error: 'Please try signing in again' });
+      }
+    }
+    res.status(500).json({ error: 'Could not create your account. Please try again.' });
+  } catch (err) {
+    console.error('Google sign-in error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

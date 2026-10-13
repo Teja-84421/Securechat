@@ -10,6 +10,8 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  // Google sign-in is optional: leave blank and the button simply won't appear.
+  googleClientId: (process.env.GOOGLE_CLIENT_ID || '').trim(),
   db: {
     host: process.env.DB_HOST || 'localhost',
     port: Number(process.env.DB_PORT) || 3306,

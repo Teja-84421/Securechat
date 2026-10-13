@@ -12,6 +12,7 @@ Register → Login → User list → Real-time chat → Encrypt → Send ciphert
 
 - Landing page with Login / Register and a short explanation of encryption
 - Registration and login (username or email) with bcrypt-hashed passwords and JWT sessions
+- **"Continue with Google"** sign-in / sign-up (optional, see *Google sign-in setup*)
 - User list, user search, online/offline status, typing indicator, message timestamps, unread badges
 - One-to-one real-time messaging over Socket.IO (WebSocket)
 - Client-side AES-256-GCM encryption with a fresh random IV for every message
@@ -96,7 +97,35 @@ Edit `.env`: set `DB_PASSWORD` and generate a `JWT_SECRET`:
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-### 3. Run the backend (port 5000)
+### 3. Google sign-in setup (optional)
+
+Skip this and the app works exactly as before; the Google button just won't appear.
+
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create (or pick) a project.
+2. **APIs & Services → OAuth consent screen**: choose *External*, fill in the app name and your email, and
+   save. While the app is in *Testing*, add the Gmail addresses that should be able to log in under **Test users**
+   (or click *Publish app* to let anyone sign in).
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type **Web application**.
+4. Under **Authorised JavaScript origins** add `http://localhost:5173` (and your real `https://…` domain
+   when you deploy). No redirect URI is needed.
+5. Copy the **Client ID** into `.env`:
+   ```
+   GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+   ```
+6. Restart the server. The first start after upgrading adds `users.google_id` and makes `password_hash`
+   nullable automatically.
+
+How it works: the browser gets a signed ID token from Google and sends it to `POST /api/auth/google`. The server
+verifies the signature, expiry and audience with `google-auth-library`, requires a *verified* email, then:
+an existing Google user is logged in; an existing email/password account with the same email is linked to Google
+(same username, rooms and history); a new email gets a new account with a username generated from the email.
+The server then issues its normal JWT, so rooms, sockets and encryption are untouched. Google accounts have no password
+(`password_hash` is `NULL`).
+
+> Encryption keys are still created per browser (see tradeoff 2): signing in with Google on a new device
+> generates a new key pair, exactly like a password login on a new device.
+
+### 4. Run the backend (port 5000)
 
 ```bash
 cd server
@@ -106,7 +135,7 @@ npm run dev        # or: npm start
 
 You should see `MySQL connected` and `SecureChat server running on port 5000`.
 
-### 4. Run the frontend (port 5173)
+### 5. Run the frontend (port 5173)
 
 ```bash
 cd client
@@ -116,7 +145,7 @@ npm run dev
 
 Open **http://localhost:5173** (use `localhost` — Web Crypto requires a secure context).
 
-### 5. Try it
+### 6. Try it
 
 Open the app in two different browsers (or one normal window + one private window), register two
 users, log in, and chat. Check the `messages` table to see only ciphertext:
@@ -199,6 +228,10 @@ Passwords and private keys are never logged. Passwords are only ever stored as b
 - **`Cannot connect to MySQL`** – check `DB_*` values and that you ran `database/schema.sql`.
   If you get "Client does not support authentication protocol", run in MySQL:
   `ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'your_password';`
+- **No Google button on the login page** – `GOOGLE_CLIENT_ID` is empty in `.env`, or the server wasn't restarted.
+- **Google says `origin_mismatch` / the button shows an error** – add the exact address you opened
+  (e.g. `http://localhost:5173`) to *Authorised JavaScript origins* in Google Cloud.
+- **Google says `Access blocked` / `app not verified`** – add your Gmail under *Test users* on the OAuth consent screen.
 - **"Web Crypto is unavailable"** – open the app at `http://localhost:5173`, not a LAN IP over HTTP.
 - **Microphone doesn't work** – allow it from the lock icon in the address bar. Recording needs
   `http://localhost` or HTTPS, and a microphone must be connected.
