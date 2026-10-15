@@ -37,7 +37,7 @@ router.get('/:userId', async (req, res) => {
 
     // Newest 500 messages, returned oldest-first. Messages I deleted "for me" are left out.
     const [rows] = await pool.query(
-      `SELECT id, sender_id, receiver_id, type, duration_ms, iv, created_at, edited_at, deleted_at,
+      `SELECT id, sender_id, receiver_id, type, duration_ms, iv, created_at, edited_at, deleted_at, delivered_at, read_at,
               CASE WHEN type = 'text' AND deleted_at IS NULL THEN ciphertext ELSE NULL END AS ciphertext
        FROM messages
        WHERE (sender_id = ? AND receiver_id = ? AND hidden_by_sender = 0)
@@ -55,7 +55,18 @@ router.get('/:userId', async (req, res) => {
       );
       reactions.forEach((r) => byId.get(r.message_id)?.push({ user_id: r.user_id, emoji: r.emoji }));
     }
-    res.json({ messages: rows });
+
+    // Call history with this person (newest 200, oldest-first)
+    const [calls] = await pool.query(
+      `SELECT id, caller_id, callee_id, kind, outcome, duration_s, created_at
+       FROM calls
+       WHERE (caller_id = ? AND callee_id = ?) OR (caller_id = ? AND callee_id = ?)
+       ORDER BY created_at DESC, id DESC LIMIT 200`,
+      [me, other, other, me]
+    );
+    calls.reverse();
+
+    res.json({ messages: rows, calls });
   } catch (err) {
     console.error('History error:', err.message);
     res.status(500).json({ error: 'Server error' });

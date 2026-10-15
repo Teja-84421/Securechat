@@ -15,6 +15,8 @@ Register → Login → User list → Real-time chat → Encrypt → Send ciphert
 - **"Continue with Google"** sign-in / sign-up (optional, see *Google sign-in setup*); new Google users choose a username and password
 - **Profile** dialog with your account details
 - **Audio and video calls** (WebRTC, peer-to-peer and encrypted)
+- **Call history** inside each chat (completed, missed, declined, cancelled, with duration and a Call back button)
+- **Read receipts:** one tick = sent, two ticks = delivered, two blue ticks = seen
 - User list, user search, online/offline status, typing indicator, message timestamps, unread badges
 - One-to-one real-time messaging over Socket.IO (WebSocket)
 - Client-side AES-256-GCM encryption with a fresh random IV for every message
@@ -182,6 +184,19 @@ How it works (WebRTC):
   direct connections; then add a TURN relay with `VITE_TURN_URL`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL` in
   the frontend environment (Vercel) and redeploy.
 - Browsers only allow camera and microphone on `localhost` or over HTTPS, and the user must allow access.
+
+### Read receipts and call history
+
+**Ticks** appear on your own messages: one grey tick means the message reached the server, two grey ticks mean it was
+delivered to the other person's app (immediately if they are online, or the moment they come online), and two **blue**
+ticks mean they opened the chat and saw it. Blue ticks only count when the app is in front of the reader (tab visible
+and focused). Hover a tick to see when it was seen. The server stores `delivered_at` and `read_at` for each message
+(never the message text), and sends `message:delivered` / `message:read` events to the sender.
+
+**Call history:** when a call ends, the server saves it in the `calls` table (who called, audio or video, the outcome
+and the duration) and both people see it in the chat, in order with the messages. Missed calls are shown in red.
+Outcomes: `completed`, `missed` (nobody answered, or the line dropped while ringing), `declined` and `cancelled`
+(the caller hung up while it rang; the receiver sees it as missed). Click **Call back** to ring again.
 
 ## How the encryption works
 

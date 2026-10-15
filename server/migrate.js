@@ -40,6 +40,8 @@ export async function migrate() {
       deleted_at  DATETIME NULL DEFAULT NULL,
       hidden_by_sender   TINYINT(1) NOT NULL DEFAULT 0,
       hidden_by_receiver TINYINT(1) NOT NULL DEFAULT 0,
+      delivered_at DATETIME NULL DEFAULT NULL,
+      read_at      DATETIME NULL DEFAULT NULL,
       FOREIGN KEY (sender_id)   REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
       INDEX idx_conversation (sender_id, receiver_id, created_at)
@@ -53,11 +55,17 @@ export async function migrate() {
     ['deleted_at', 'DATETIME NULL DEFAULT NULL'],
     ['hidden_by_sender', 'TINYINT(1) NOT NULL DEFAULT 0'],
     ['hidden_by_receiver', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['delivered_at', 'DATETIME NULL DEFAULT NULL'], // double tick: reached the other person's app
+    ['read_at', 'DATETIME NULL DEFAULT NULL'], // blue double tick: the other person opened the chat
   ];
   for (const [name, definition] of newColumns) {
     if (!(await columnInfo('messages', name))) {
       await pool.query(`ALTER TABLE messages ADD COLUMN ${name} ${definition}`);
       console.log(`Database upgraded: messages.${name} added`);
+      if (name === 'read_at') {
+        // Messages from before read receipts existed count as already delivered and seen
+        await pool.query('UPDATE messages SET delivered_at = created_at, read_at = created_at');
+      }
     }
   }
 
@@ -88,6 +96,22 @@ export async function migrate() {
       PRIMARY KEY (message_id, user_id),
       FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+
+  // Call history: one row per finished call (who, audio/video, how it ended, how long)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS calls (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      caller_id   INT NOT NULL,
+      callee_id   INT NOT NULL,
+      kind        ENUM('audio','video') NOT NULL,
+      outcome     ENUM('completed','missed','declined','cancelled') NOT NULL,
+      duration_s  INT NOT NULL DEFAULT 0,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (caller_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (callee_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_call_pair (caller_id, callee_id, created_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `);
 

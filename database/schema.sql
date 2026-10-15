@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS messages (
   deleted_at  DATETIME NULL DEFAULT NULL,       -- "delete for everyone" (ciphertext is wiped)
   hidden_by_sender   TINYINT(1) NOT NULL DEFAULT 0,  -- "delete for me"
   hidden_by_receiver TINYINT(1) NOT NULL DEFAULT 0,
+  delivered_at DATETIME NULL DEFAULT NULL,      -- double tick: reached the receiver's app
+  read_at      DATETIME NULL DEFAULT NULL,      -- blue double tick: receiver opened the chat
   FOREIGN KEY (sender_id)   REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_conversation (sender_id, receiver_id, created_at)
@@ -37,6 +39,19 @@ CREATE TABLE IF NOT EXISTS reactions (
   PRIMARY KEY (message_id, user_id),            -- one reaction per person per message
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS calls (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  caller_id   INT NOT NULL,
+  callee_id   INT NOT NULL,
+  kind        ENUM('audio','video') NOT NULL,
+  outcome     ENUM('completed','missed','declined','cancelled') NOT NULL,
+  duration_s  INT NOT NULL DEFAULT 0,           -- 0 unless the call was answered
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (caller_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (callee_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_call_pair (caller_id, callee_id, created_at)
 );
 
 CREATE TABLE IF NOT EXISTS rooms (

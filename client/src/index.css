@@ -299,7 +299,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .bubble.deleted { background: transparent; border: 1px solid var(--line-strong); color: var(--muted); }
 .deleted-note { display: inline-flex; align-items: center; gap: 0.4rem; font-style: italic; font-size: 0.92rem; }
 .bubble .text { white-space: pre-wrap; }
-.meta { justify-self: end; display: flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; opacity: 0.68; margin-top: 0.1rem; }
+.meta { justify-self: end; display: flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; margin-top: 0.1rem; }
+.meta em, .meta time { opacity: 0.68; }
 .meta em { font-style: normal; }
 
 .typing-bubble { display: flex; gap: 0.3rem; padding: 0.85rem 1rem; }
@@ -489,3 +490,23 @@ button { -webkit-tap-highlight-color: transparent; }
 .call-btn.accept:hover { background: #26bf80; }
 @keyframes callRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.9); opacity: 0; } }
 @media (max-width: 640px) { .call-local { width: 30vw; } }
+
+/* ---------- Read receipts (ticks) ---------- */
+.ticks { display: inline-flex; align-items: center; margin-left: 0.05rem; }
+.ticks svg { width: 18px; height: 18px; stroke-width: 2.4; }
+.ticks.sent, .ticks.delivered { opacity: 0.6; }
+.ticks.read { color: #0a5fd8; opacity: 1; }
+
+/* ---------- Call history entries inside a chat ---------- */
+.call-log { align-self: center; width: min(100%, 22rem); margin: 0.5rem 0; }
+.call-log-card { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.8rem; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); }
+.call-log-ico { flex: none; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: color-mix(in srgb, var(--secure) 16%, transparent); color: var(--secure); }
+.call-log-card.bad .call-log-ico { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.call-log-card.muted .call-log-ico { background: var(--panel-2); color: var(--muted); }
+.call-log-text { flex: 1; min-width: 0; display: grid; line-height: 1.25; }
+.call-log-text strong { font-size: 0.92rem; }
+.call-log-card.bad .call-log-text strong { color: var(--danger); }
+.call-log-text small { color: var(--muted); font-size: 0.76rem; }
+.call-log-again { flex: none; font: inherit; font-size: 0.78rem; font-weight: 700; color: var(--accent-ink); background: none; border: 1px solid var(--line-strong); border-radius: 999px; padding: 0.28rem 0.7rem; cursor: pointer; }
+.call-log-again:hover:not(:disabled) { background: var(--panel-2); }
+.call-log-again:disabled { opacity: 0.4; cursor: not-allowed; }

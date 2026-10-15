@@ -4,6 +4,17 @@ import VoiceBubble from './VoiceBubble';
 
 const formatTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+// WhatsApp-style ticks on my own messages: one = sent, two = delivered, two blue = seen
+function Ticks({ m }) {
+  const status = m.readAt ? 'read' : m.deliveredAt ? 'delivered' : 'sent';
+  const label = { sent: 'Sent', delivered: 'Delivered', read: 'Seen' }[status];
+  return (
+    <span className={`ticks ${status}`} title={status === 'read' ? `Seen ${new Date(m.readAt).toLocaleString()}` : label} aria-label={label}>
+      <Icon name={status === 'sent' ? 'check' : 'checks'} size={15} />
+    </span>
+  );
+}
+
 // pos: where this bubble sits in a run of messages from the same person (single | first | middle | last)
 export default function MessageBubble({ m, myId, pos = 'single', onOpenMenu, onToggleReaction, loadVoice }) {
   const bubbleRef = useRef(null);
@@ -69,6 +80,7 @@ export default function MessageBubble({ m, myId, pos = 'single', onOpenMenu, onT
           <span className="meta">
             {m.editedAt && !deleted && <em>edited</em>}
             <time title={new Date(m.time).toLocaleString()}>{formatTime(m.time)}</time>
+            {m.mine && !deleted && <Ticks m={m} />}
           </span>
         </div>
 

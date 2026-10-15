@@ -60,8 +60,35 @@ export function setupSocket(io) {
   };
 
   // ---- Call registry: at most one call per user ----
-  const calls = new Map(); // callId -> { id, caller, callee, kind, state: 'ringing' | 'active', timer }
+  const calls = new Map(); // callId -> { id, caller, callee, kind, state: 'ringing' | 'active', timer, answeredAt }
   const inCall = new Map(); // userId -> callId
+
+  // Saves a finished call to the history and tells both people so it appears in their chat
+  const logCall = async (call, reason) => {
+    try {
+      let outcome = 'missed'; // no answer, or the line dropped before anyone picked up
+      if (call.answeredAt) outcome = 'completed';
+      else if (reason === 'declined') outcome = 'declined';
+      else if (reason === 'cancelled') outcome = 'cancelled'; // the caller hung up while it rang
+      const durationS = call.answeredAt ? Math.max(0, Math.round((Date.now() - call.answeredAt) / 1000)) : 0;
+      const createdAt = new Date(); // when the call ended: the entry appears at the bottom of the chat
+      const [result] = await pool.query(
+        'INSERT INTO calls (caller_id, callee_id, kind, outcome, duration_s, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [call.caller, call.callee, call.kind, outcome, durationS, createdAt]
+      );
+      io.to([room(call.caller), room(call.callee)]).emit('call:log', {
+        id: result.insertId,
+        caller_id: call.caller,
+        callee_id: call.callee,
+        kind: call.kind,
+        outcome,
+        duration_s: durationS,
+        created_at: createdAt.toISOString(),
+      });
+    } catch (err) {
+      console.error('Call log error:', err.message);
+    }
+  };
 
   const endCall = (call, reason) => {
     if (!calls.has(call.id)) return;
@@ -70,6 +97,25 @@ export function setupSocket(io) {
     inCall.delete(call.caller);
     inCall.delete(call.callee);
     io.to([room(call.caller), room(call.callee)]).emit('call:ended', { callId: call.id, reason });
+    logCall(call, reason);
+  };
+
+  // Messages that arrived while someone was offline become "delivered" when they come online
+  const deliverPending = async (userId) => {
+    try {
+      const [rows] = await pool.query(
+        'SELECT id, sender_id FROM messages WHERE receiver_id = ? AND delivered_at IS NULL AND deleted_at IS NULL',
+        [userId]
+      );
+      if (!rows.length) return;
+      const now = new Date();
+      await pool.query('UPDATE messages SET delivered_at = ? WHERE id IN (?)', [now, rows.map((r) => r.id)]);
+      const bySender = new Map();
+      for (const r of rows) bySender.set(r.sender_id, [...(bySender.get(r.sender_id) || []), r.id]);
+      for (const [sender, ids] of bySender) io.to(room(sender)).emit('message:delivered', { ids, at: now.toISOString() });
+    } catch (err) {
+      console.error('Deliver pending error:', err.message);
+    }
   };
 
   io.on('connection', (socket) => {
@@ -77,6 +123,7 @@ export function setupSocket(io) {
     socket.join(room(me)); // one room per user (supports multiple tabs)
     if (io.sockets.adapter.rooms.get(room(me)).size === 1) {
       notifyPeers(me, 'presence', { userId: me, online: true });
+      deliverPending(me); // first tab: mark messages sent to me while offline as delivered
     }
 
     // Wraps a handler so every event gets the same ack + error handling
@@ -104,9 +151,10 @@ export function setupSocket(io) {
       if (!(await areMatched(me, to))) return reply({ ok: false, error: 'You can only message people in your rooms' });
 
       const createdAt = new Date();
+      const deliveredAt = isOnline(io, to) ? createdAt : null; // double tick right away if they are online
       const [result] = await pool.query(
-        'INSERT INTO messages (sender_id, receiver_id, type, duration_ms, ciphertext, iv, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [me, to, type, isVoice ? durationMs : null, ciphertext, iv, createdAt]
+        'INSERT INTO messages (sender_id, receiver_id, type, duration_ms, ciphertext, iv, created_at, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [me, to, type, isVoice ? durationMs : null, ciphertext, iv, createdAt, deliveredAt]
       );
       const message = {
         id: result.insertId,
@@ -118,6 +166,8 @@ export function setupSocket(io) {
         created_at: createdAt.toISOString(),
         edited_at: null,
         deleted_at: null,
+        delivered_at: deliveredAt ? deliveredAt.toISOString() : null,
+        read_at: null,
         reactions: [],
       };
       // Voice audio is fetched on demand (GET /api/messages/audio/:id), not pushed to everyone.
@@ -200,7 +250,7 @@ export function setupSocket(io) {
       if (!isOnline(io, to)) return reply({ ok: false, error: 'They are offline right now' });
       if (inCall.has(to)) return reply({ ok: false, error: 'They are busy on another call' });
 
-      const call = { id: callId, caller: me, callee: to, kind, state: 'ringing', timer: null };
+      const call = { id: callId, caller: me, callee: to, kind, state: 'ringing', timer: null, answeredAt: null };
       call.timer = setTimeout(() => endCall(call, 'no-answer'), RING_TIMEOUT_MS);
       calls.set(callId, call);
       inCall.set(me, callId);
@@ -214,6 +264,7 @@ export function setupSocket(io) {
       if (!call || call.callee !== me || call.state !== 'ringing') return reply({ ok: false, error: 'This call is no longer available' });
       clearTimeout(call.timer);
       call.state = 'active';
+      call.answeredAt = Date.now();
       socket.to(room(me)).emit('call:ended', { callId, reason: 'other-device' }); // stop ringing on my other tabs
       io.to(room(call.caller)).emit('call:accepted', { callId });
       reply({ ok: true });
@@ -239,6 +290,24 @@ export function setupSocket(io) {
       if (!okType || JSON.stringify(data).length > MAX_SIGNAL_CHARS) return reply({ ok: false });
       const other = call.caller === me ? call.callee : call.caller;
       io.to(room(other)).emit('call:signal', { callId, data });
+      reply({ ok: true });
+    });
+
+    // ---- Read receipts: the receiver opened the chat, so everything from `from` is now "seen" ----
+    handle('messages:read', async ({ from }, reply) => {
+      if (!Number.isInteger(from) || from === me) return reply({ ok: false });
+      if (!(await areMatched(me, from))) return reply({ ok: false });
+      const [rows] = await pool.query(
+        'SELECT id FROM messages WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL AND deleted_at IS NULL',
+        [from, me]
+      );
+      if (rows.length) {
+        const ids = rows.map((r) => r.id);
+        const now = new Date();
+        await pool.query('UPDATE messages SET read_at = ?, delivered_at = COALESCE(delivered_at, ?) WHERE id IN (?)', [now, now, ids]);
+        io.to(room(from)).emit('message:read', { by: me, ids, at: now.toISOString() }); // blue ticks for the sender
+      }
+      socket.to(room(me)).emit('read:sync', { peer: from }); // clear the unread badge in my other tabs
       reply({ ok: true });
     });
 

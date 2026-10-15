@@ -14,6 +14,7 @@ import InfoPanel from '../components/InfoPanel';
 import ProfileDialog from '../components/ProfileDialog';
 import EmojiPicker from '../components/EmojiPicker';
 import CallOverlay from '../components/CallOverlay';
+import CallLogItem from '../components/CallLogItem';
 import { useCall } from '../useCall';
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // keep in sync with server/socket.js
@@ -40,6 +41,7 @@ export default function Chat() {
   const [search, setSearch] = useState('');
   const [activeId, setActiveId] = useState(null); // the other person's user id
   const [messages, setMessages] = useState([]);
+  const [callLog, setCallLog] = useState([]); // finished calls with the active person
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState({});
   const [unread, setUnread] = useState({});
@@ -77,6 +79,16 @@ export default function Chat() {
   usersRef.current = peers;
   const peer = peers.find((u) => u.id === activeId) || null;
   const activeRoom = rooms.find((r) => r.peer?.id === activeId) || null;
+
+  // Messages and finished calls in one timeline, oldest first
+  const timeline = useMemo(
+    () =>
+      [
+        ...messages.map((m) => ({ kind: 'message', key: `m${m.id}`, time: m.time, m })),
+        ...callLog.map((c) => ({ kind: 'call', key: `c${c.id}`, time: c.created_at, c })),
+      ].sort((a, b) => new Date(a.time) - new Date(b.time)),
+    [messages, callLog]
+  );
   const unreadTotal = Object.values(unread).reduce((a, b) => a + b, 0);
 
   const flash = useCallback((text) => {
@@ -124,6 +136,8 @@ export default function Chat() {
       deletedAt: m.deleted_at || null,
       durationMs: m.duration_ms || 0,
       reactions: m.reactions || [],
+      deliveredAt: m.delivered_at || null,
+      readAt: m.read_at || null,
     }),
     [user.id]
   );
@@ -135,6 +149,23 @@ export default function Chat() {
     },
     [user.id]
   );
+
+  // Tell the server I have seen everything in this chat (the other person gets blue ticks).
+  // Only counts when the app is actually in front of me.
+  const markRead = useCallback((peerId) => {
+    if (!peerId || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+    socketRef.current?.emit('messages:read', { from: peerId });
+  }, []);
+
+  useEffect(() => {
+    const onBackInFront = () => activeRef.current && markRead(activeRef.current);
+    window.addEventListener('focus', onBackInFront);
+    document.addEventListener('visibilitychange', onBackInFront);
+    return () => {
+      window.removeEventListener('focus', onBackInFront);
+      document.removeEventListener('visibilitychange', onBackInFront);
+    };
+  }, [markRead]);
 
   // ---- Socket.IO connection (JWT sent in the handshake) ----
   useEffect(() => {
@@ -180,6 +211,7 @@ export default function Chat() {
         const text = await decryptRow(m, p);
         setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, toView(m, text)]));
         setTyping((t) => ({ ...t, [otherId]: false }));
+        if (m.sender_id !== user.id) markRead(otherId); // I'm looking at this chat right now
       } else if (m.sender_id !== user.id) {
         setUnread((u) => ({ ...u, [otherId]: (u[otherId] || 0) + 1 }));
       }
@@ -208,6 +240,22 @@ export default function Chat() {
       setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
     );
 
+    // Read receipts: my messages reached the other person / were seen by them
+    socket.on('message:delivered', ({ ids, at }) =>
+      setMessages((prev) => prev.map((x) => (ids.includes(x.id) && !x.deliveredAt ? { ...x, deliveredAt: at } : x)))
+    );
+    socket.on('message:read', ({ ids, at }) =>
+      setMessages((prev) => prev.map((x) => (ids.includes(x.id) ? { ...x, readAt: at, deliveredAt: x.deliveredAt || at } : x)))
+    );
+    // I read this chat in another tab: clear the unread badge here too
+    socket.on('read:sync', ({ peer: peerId }) => setUnread((u) => ({ ...u, [peerId]: 0 })));
+
+    // A call just finished: add it to the chat history
+    socket.on('call:log', (c) => {
+      const otherId = c.caller_id === user.id ? c.callee_id : c.caller_id;
+      if (otherId === activeRef.current) setCallLog((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]));
+    });
+
     return () => {
       socket.disconnect();
       Object.values(typingTimers.current).forEach(clearTimeout);
@@ -220,7 +268,7 @@ export default function Chat() {
   // Stay at the bottom only when a message is added (not for reactions/edits)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, typing, activeId]);
+  }, [messages.length, callLog.length, typing, activeId]);
 
   async function selectUser(id) {
     stopTyping();
@@ -228,6 +276,7 @@ export default function Chat() {
     activeRef.current = id;
     setUnread((u) => ({ ...u, [id]: 0 }));
     setMessages([]);
+    setCallLog([]);
     setError('');
     setDraft('');
     setMenu(null);
@@ -236,9 +285,13 @@ export default function Chat() {
     setEmojiOpen(false);
     setLoadingHistory(true);
     try {
-      const [{ messages: raw }, p] = await Promise.all([api.history(id), getPeer(id)]);
+      const [{ messages: raw, calls: rawCalls }, p] = await Promise.all([api.history(id), getPeer(id)]);
       const view = await Promise.all(raw.map(async (m) => toView(m, await decryptRow(m, p))));
-      if (activeRef.current === id) setMessages(view);
+      if (activeRef.current === id) {
+        setMessages(view);
+        setCallLog(rawCalls || []);
+        markRead(id); // opening the chat = I have seen their messages
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -602,24 +655,37 @@ export default function Chat() {
 
             <div className="messages" onScroll={() => menu && setMenu(null)}>
               {loadingHistory && <div className="empty-note">Decrypting messages…</div>}
-              {!loadingHistory && messages.length === 0 && (
+              {!loadingHistory && timeline.length === 0 && (
                 <div className="first-hello">
                   <Avatar name={peer.username} size={64} />
                   <h3>You’re in a room with {peer.username}</h3>
                   <p>Say hello, or send a voice note. Only the two of you can read it.</p>
                 </div>
               )}
-              {messages.map((m, i) => {
-                const prev = messages[i - 1];
-                const next = messages[i + 1];
-                const a = linked(prev, m);
-                const b = linked(m, next);
+              {timeline.map((item, i) => {
+                const before = timeline[i - 1];
+                const after = timeline[i + 1];
+                const dayBreak = i === 0 || !sameDay(before.time, item.time);
+                if (item.kind === 'call') {
+                  return (
+                    <Fragment key={item.key}>
+                      {dayBreak && <div className="day-sep"><span>{dayLabel(item.time)}</span></div>}
+                      <CallLogItem
+                        c={item.c}
+                        myId={user.id}
+                        canCall={peer.online && connected && !calls.call}
+                        onCallBack={(kind) => calls.startCall(peer, kind)}
+                      />
+                    </Fragment>
+                  );
+                }
+                const m = item.m;
+                const a = before?.kind === 'message' && linked(before.m, m);
+                const b = after?.kind === 'message' && linked(m, after.m);
                 const pos = a ? (b ? 'middle' : 'last') : b ? 'first' : 'single';
                 return (
-                  <Fragment key={m.id}>
-                    {(i === 0 || !sameDay(prev.time, m.time)) && (
-                      <div className="day-sep"><span>{dayLabel(m.time)}</span></div>
-                    )}
+                  <Fragment key={item.key}>
+                    {dayBreak && <div className="day-sep"><span>{dayLabel(m.time)}</span></div>}
                     <MessageBubble
                       m={m}
                       myId={user.id}
