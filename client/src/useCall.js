@@ -96,7 +96,7 @@ function createTone() {
 
 export function useCall({ socketRef, connected, onNotice }) {
   // call: null | { callId, peer: {id, username}, kind, direction: 'in'|'out', phase: 'ringing'|'connecting'|'active',
-  //                startedAt, muted, cameraOff, unstable }
+  //                startedAt, muted, cameraOff, speaker, unstable }
   const [call, setCall] = useState(null);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
@@ -195,7 +195,7 @@ export function useCall({ socketRef, connected, onNotice }) {
 
     const onIncoming = ({ callId, from, username, kind }) => {
       if (callRef.current) return send('call:reject', { callId }); // already busy
-      update({ callId, peer: { id: from, username }, kind, direction: 'in', phase: 'ringing', muted: false, cameraOff: false });
+      update({ callId, peer: { id: from, username }, kind, direction: 'in', phase: 'ringing', muted: false, cameraOff: false, speaker: true });
       tone().start('incoming');
     };
 
@@ -287,7 +287,7 @@ export function useCall({ socketRef, connected, onNotice }) {
         return;
       }
       const callId = newCallId();
-      update({ callId, peer: { id: peer.id, username: peer.username }, kind, direction: 'out', phase: 'ringing', muted: false, cameraOff: false });
+      update({ callId, peer: { id: peer.id, username: peer.username }, kind, direction: 'out', phase: 'ringing', muted: false, cameraOff: false, speaker: true });
       let stream;
       try {
         stream = await getMedia(kind);
@@ -363,5 +363,10 @@ export function useCall({ socketRef, connected, onNotice }) {
     update({ cameraOff: !track.enabled });
   }, [update]);
 
-  return { call, localStream, remoteStream, startCall, accept, decline, hangup, toggleMute, toggleCamera };
+  // The overlay applies this to the element that plays the other person's voice (see audioRoute.js)
+  const toggleSpeaker = useCallback(() => {
+    if (callRef.current) update({ speaker: callRef.current.speaker === false });
+  }, [update]);
+
+  return { call, localStream, remoteStream, startCall, accept, decline, hangup, toggleMute, toggleCamera, toggleSpeaker };
 }

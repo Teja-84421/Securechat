@@ -482,14 +482,14 @@ button { -webkit-tap-highlight-color: transparent; }
 .call-bar { position: absolute; z-index: 3; left: 0; right: 0; bottom: calc(1.8rem + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: center; gap: 1.3rem; }
 .call-btn { width: 3.7rem; height: 3.7rem; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; color: #fff; background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(10px); transition: transform 0.12s, background 0.12s; }
 .call-btn:hover { transform: scale(1.07); background: rgba(255, 255, 255, 0.28); }
-.call-btn.off { background: #fff; color: #111; }
+.call-btn.off, .call-btn.on { background: #fff; color: #111; }
 .call-btn.end { background: #e5384f; }
 .call-btn.end:hover { background: #f0475f; }
 .call-btn.end svg { transform: rotate(135deg); }
 .call-btn.accept { background: #1fa971; }
 .call-btn.accept:hover { background: #26bf80; }
 @keyframes callRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.9); opacity: 0; } }
-@media (max-width: 640px) { .call-local { width: 30vw; } }
+@media (max-width: 640px) { .call-local { width: 30vw; } .call-bar { gap: 0.9rem; } .call-btn { width: 3.4rem; height: 3.4rem; } }
 
 /* ---------- Read receipts (ticks) ---------- */
 .ticks { display: inline-flex; align-items: center; margin-left: 0.05rem; }

@@ -805,6 +805,7 @@ export default function Chat() {
         onHangup={calls.hangup}
         onMute={calls.toggleMute}
         onCamera={calls.toggleCamera}
+        onSpeaker={calls.toggleSpeaker}
       />
 
       {profileOpen && (

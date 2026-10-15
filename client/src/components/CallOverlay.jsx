@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar';
 import Icon from './Icons';
+import { setSpeaker } from '../audioRoute';
 
 // Full-screen call UI: incoming-call screen, "calling…" screen and the in-call view.
 function attach(ref, stream) {
@@ -17,7 +18,7 @@ function Timer({ since }) {
   return <>{String(Math.floor(s / 60)).padStart(2, '0')}:{String(s % 60).padStart(2, '0')}</>;
 }
 
-export default function CallOverlay({ call, localStream, remoteStream, onAccept, onDecline, onHangup, onMute, onCamera }) {
+export default function CallOverlay({ call, localStream, remoteStream, onAccept, onDecline, onHangup, onMute, onCamera, onSpeaker }) {
   const remoteRef = useRef(null);
   const localRef = useRef(null);
 
@@ -28,6 +29,12 @@ export default function CallOverlay({ call, localStream, remoteStream, onAccept,
   // (Re)attach the media streams whenever a stream or the layout changes
   useEffect(() => attach(remoteRef, remoteStream), [remoteStream, layoutKey]);
   useEffect(() => attach(localRef, localStream), [localStream, layoutKey]);
+
+  // Speaker on = loudspeaker / full volume, off = earpiece / quieter (re-applied when the stream arrives)
+  const speakerOn = call?.speaker !== false;
+  useEffect(() => {
+    if (remoteRef.current) setSpeaker(remoteRef.current, speakerOn);
+  }, [speakerOn, remoteStream, layoutKey]);
 
   if (!call) return null;
 
@@ -78,6 +85,11 @@ export default function CallOverlay({ call, localStream, remoteStream, onAccept,
             {phase !== 'ringing' && (
               <button type="button" className={`call-btn ${call.muted ? 'off' : ''}`} onClick={onMute} aria-label={call.muted ? 'Unmute' : 'Mute'} aria-pressed={!!call.muted} title={call.muted ? 'Unmute' : 'Mute'}>
                 <Icon name={call.muted ? 'micOff' : 'mic'} size={24} />
+              </button>
+            )}
+            {phase !== 'ringing' && (
+              <button type="button" className={`call-btn ${speakerOn ? 'on' : ''}`} onClick={onSpeaker} aria-label={speakerOn ? 'Turn speaker off' : 'Turn speaker on'} aria-pressed={speakerOn} title={speakerOn ? 'Speaker on' : 'Speaker off'}>
+                <Icon name={speakerOn ? 'speaker' : 'speakerLow'} size={24} />
               </button>
             )}
             {isVideo && phase !== 'ringing' && (

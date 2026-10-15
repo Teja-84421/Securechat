@@ -171,7 +171,7 @@ SELECT sender_id, receiver_id, ciphertext, iv, created_at FROM messages;
 
 Open a chat with someone who is **online** and click the phone (voice) or camera (video) button in the chat header.
 The other person sees a full-screen incoming-call screen with Accept and Decline. During a call you can mute your
-microphone, turn your camera off and hang up.
+microphone, turn your camera off, switch the **speaker** on or off, and hang up.
 
 How it works (WebRTC):
 
@@ -184,6 +184,10 @@ How it works (WebRTC):
   direct connections; then add a TURN relay with `VITE_TURN_URL`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL` in
   the frontend environment (Vercel) and redeploy.
 - Browsers only allow camera and microphone on `localhost` or over HTTPS, and the user must allow access.
+- **Speaker button** (voice and video calls): on phones whose browser exposes both a loudspeaker and an earpiece
+  (for example Chrome on Android) it really switches the sound between them. On laptops and in browsers without that
+  feature (Safari, Firefox) it switches between full and quieter volume and never overrides the speakers or headphones
+  you are already using. It starts on.
 
 ### Read receipts and call history
 
