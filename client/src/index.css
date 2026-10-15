@@ -464,3 +464,28 @@ button { -webkit-tap-highlight-color: transparent; }
   .info { width: 100%; }
   .landing-nav .btn-ghost { display: none; }
 }
+
+/* ---------- Audio / video calls ---------- */
+.call-overlay { position: fixed; inset: 0; z-index: 80; display: grid; overflow: hidden; color: #fff; background: radial-gradient(120% 90% at 50% 0%, #1c2760 0%, #0a0f24 70%); animation: fade 0.15s ease-out; }
+.call-remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.call-top { position: relative; z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: calc(1.3rem + env(safe-area-inset-top, 0px)) 1rem 0; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55); }
+.call-top strong { font-family: var(--display); font-size: 1.5rem; letter-spacing: -0.03em; }
+.call-status { font-size: 1rem; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.call-secure { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; font-weight: 600; padding: 0.25rem 0.7rem; border-radius: 999px; background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(8px); text-shadow: none; }
+.call-center { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; pointer-events: none; }
+.call-avatar { position: relative; display: inline-grid; }
+.call-avatar.ringing::before, .call-avatar.ringing::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5); animation: callRing 2s ease-out infinite; }
+.call-avatar.ringing::after { animation-delay: 1s; }
+.call-local { position: absolute; z-index: 2; right: 1rem; bottom: calc(7.4rem + env(safe-area-inset-bottom, 0px)); width: min(32vw, 190px); aspect-ratio: 3 / 4; object-fit: cover; border-radius: 18px; background: #000; border: 2px solid rgba(255, 255, 255, 0.4); box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.7); transform: scaleX(-1); }
+.call-local.cam-off { opacity: 0.25; }
+.call-bar { position: absolute; z-index: 3; left: 0; right: 0; bottom: calc(1.8rem + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: center; gap: 1.3rem; }
+.call-btn { width: 3.7rem; height: 3.7rem; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; color: #fff; background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(10px); transition: transform 0.12s, background 0.12s; }
+.call-btn:hover { transform: scale(1.07); background: rgba(255, 255, 255, 0.28); }
+.call-btn.off { background: #fff; color: #111; }
+.call-btn.end { background: #e5384f; }
+.call-btn.end:hover { background: #f0475f; }
+.call-btn.end svg { transform: rotate(135deg); }
+.call-btn.accept { background: #1fa971; }
+.call-btn.accept:hover { background: #26bf80; }
+@keyframes callRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.9); opacity: 0; } }
+@media (max-width: 640px) { .call-local { width: 30vw; } }

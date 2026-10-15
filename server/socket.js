@@ -12,6 +12,13 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000; // messages can be edited for 15 minutes
 
 const room = userRoom;
 
+// Audio/video calls: the server only relays WebRTC signalling (who is calling, SDP offers/answers and
+// ICE candidates). The call media itself flows directly between the two browsers, encrypted (DTLS-SRTP).
+const CALL_ID_RE = /^[A-Za-z0-9_-]{8,40}$/;
+const CALL_KINDS = new Set(['audio', 'video']);
+const MAX_SIGNAL_CHARS = 20_000; // an SDP offer is a few KB
+const RING_TIMEOUT_MS = 45_000; // unanswered calls stop ringing after 45 s
+
 export const isOnline = (io, userId) => io.sockets.adapter.rooms.has(room(userId));
 
 const validCipher = (ciphertext, iv, max) =>
@@ -50,6 +57,19 @@ export function setupSocket(io) {
       [id]
     );
     return rows[0] || null;
+  };
+
+  // ---- Call registry: at most one call per user ----
+  const calls = new Map(); // callId -> { id, caller, callee, kind, state: 'ringing' | 'active', timer }
+  const inCall = new Map(); // userId -> callId
+
+  const endCall = (call, reason) => {
+    if (!calls.has(call.id)) return;
+    clearTimeout(call.timer);
+    calls.delete(call.id);
+    inCall.delete(call.caller);
+    inCall.delete(call.callee);
+    io.to([room(call.caller), room(call.callee)]).emit('call:ended', { callId: call.id, reason });
   };
 
   io.on('connection', (socket) => {
@@ -165,6 +185,63 @@ export function setupSocket(io) {
       reply({ ok: true });
     });
 
+    // ---- Audio / video calls (WebRTC signalling) ----
+    const callFor = (callId) => {
+      const call = typeof callId === 'string' ? calls.get(callId) : null;
+      return call && (call.caller === me || call.callee === me) ? call : null;
+    };
+
+    handle('call:invite', async ({ to, kind, callId }, reply) => {
+      if (!Number.isInteger(to) || to === me) return reply({ ok: false, error: 'Invalid call' });
+      if (!CALL_KINDS.has(kind) || typeof callId !== 'string' || !CALL_ID_RE.test(callId) || calls.has(callId))
+        return reply({ ok: false, error: 'Invalid call' });
+      if (!(await areMatched(me, to))) return reply({ ok: false, error: 'You can only call people you share a room with' });
+      if (inCall.has(me)) return reply({ ok: false, error: 'You are already in a call' });
+      if (!isOnline(io, to)) return reply({ ok: false, error: 'They are offline right now' });
+      if (inCall.has(to)) return reply({ ok: false, error: 'They are busy on another call' });
+
+      const call = { id: callId, caller: me, callee: to, kind, state: 'ringing', timer: null };
+      call.timer = setTimeout(() => endCall(call, 'no-answer'), RING_TIMEOUT_MS);
+      calls.set(callId, call);
+      inCall.set(me, callId);
+      inCall.set(to, callId);
+      io.to(room(to)).emit('call:incoming', { callId, from: me, username: socket.user.username, kind });
+      reply({ ok: true });
+    });
+
+    handle('call:accept', ({ callId }, reply) => {
+      const call = callFor(callId);
+      if (!call || call.callee !== me || call.state !== 'ringing') return reply({ ok: false, error: 'This call is no longer available' });
+      clearTimeout(call.timer);
+      call.state = 'active';
+      socket.to(room(me)).emit('call:ended', { callId, reason: 'other-device' }); // stop ringing on my other tabs
+      io.to(room(call.caller)).emit('call:accepted', { callId });
+      reply({ ok: true });
+    });
+
+    handle('call:reject', ({ callId }, reply) => {
+      const call = callFor(callId);
+      if (call && call.callee === me && call.state === 'ringing') endCall(call, 'declined');
+      reply({ ok: true });
+    });
+
+    handle('call:end', ({ callId }, reply) => {
+      const call = callFor(callId);
+      if (call) endCall(call, call.state === 'ringing' ? 'cancelled' : 'hangup');
+      reply({ ok: true });
+    });
+
+    // Relays an SDP offer/answer or an ICE candidate to the other person
+    handle('call:signal', ({ callId, data }, reply) => {
+      const call = callFor(callId);
+      if (!call || call.state !== 'active') return reply({ ok: false });
+      const okType = data && ['offer', 'answer', 'candidate'].includes(data.type);
+      if (!okType || JSON.stringify(data).length > MAX_SIGNAL_CHARS) return reply({ ok: false });
+      const other = call.caller === me ? call.callee : call.caller;
+      io.to(room(other)).emit('call:signal', { callId, data });
+      reply({ ok: true });
+    });
+
     socket.on('typing', async ({ to, isTyping } = {}) => {
       if (!Number.isInteger(to)) return;
       try {
@@ -176,6 +253,8 @@ export function setupSocket(io) {
 
     socket.on('disconnect', () => {
       if (!io.sockets.adapter.rooms.has(room(me))) {
+        const callId = inCall.get(me);
+        if (callId && calls.has(callId)) endCall(calls.get(callId), 'disconnected');
         notifyPeers(me, 'presence', { userId: me, online: false });
       }
     });

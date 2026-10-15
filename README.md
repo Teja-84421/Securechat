@@ -14,6 +14,7 @@ Register → Login → User list → Real-time chat → Encrypt → Send ciphert
 - Registration and login (username or email) with bcrypt-hashed passwords and JWT sessions
 - **"Continue with Google"** sign-in / sign-up (optional, see *Google sign-in setup*); new Google users choose a username and password
 - **Profile** dialog with your account details
+- **Audio and video calls** (WebRTC, peer-to-peer and encrypted)
 - User list, user search, online/offline status, typing indicator, message timestamps, unread badges
 - One-to-one real-time messaging over Socket.IO (WebSocket)
 - Client-side AES-256-GCM encryption with a fresh random IV for every message
@@ -163,6 +164,24 @@ users, log in, and chat. Check the `messages` table to see only ciphertext:
 ```sql
 SELECT sender_id, receiver_id, ciphertext, iv, created_at FROM messages;
 ```
+
+### Audio and video calls
+
+Open a chat with someone who is **online** and click the phone (voice) or camera (video) button in the chat header.
+The other person sees a full-screen incoming-call screen with Accept and Decline. During a call you can mute your
+microphone, turn your camera off and hang up.
+
+How it works (WebRTC):
+
+- **Signalling** (who is calling, the SDP offer/answer, ICE candidates) is relayed by the server over the existing
+  Socket.IO connection (`call:invite`, `call:accept`, `call:reject`, `call:end`, `call:signal`). Only people who share a
+  room can call each other, and each person can be in one call at a time. Unanswered calls stop ringing after 45 seconds.
+- **Media** (audio and video) flows **directly between the two browsers** and is encrypted with DTLS-SRTP, so the server
+  never carries or sees it.
+- **NAT traversal:** the app uses public STUN servers so the browsers can find each other. Strict networks may block
+  direct connections; then add a TURN relay with `VITE_TURN_URL`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL` in
+  the frontend environment (Vercel) and redeploy.
+- Browsers only allow camera and microphone on `localhost` or over HTTPS, and the user must allow access.
 
 ## How the encryption works
 

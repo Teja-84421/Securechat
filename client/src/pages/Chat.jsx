@@ -13,6 +13,8 @@ import RoomDialog from '../components/RoomDialog';
 import InfoPanel from '../components/InfoPanel';
 import ProfileDialog from '../components/ProfileDialog';
 import EmojiPicker from '../components/EmojiPicker';
+import CallOverlay from '../components/CallOverlay';
+import { useCall } from '../useCall';
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // keep in sync with server/socket.js
 const GROUP_GAP_MS = 5 * 60 * 1000;
@@ -82,6 +84,9 @@ export default function Chat() {
     clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(''), 2600);
   }, []);
+
+  // Audio / video calls (WebRTC; signalling goes over the same Socket.IO connection)
+  const calls = useCall({ socketRef, connected, onNotice: flash });
 
   const loadRooms = useCallback(async () => {
     try {
@@ -570,6 +575,19 @@ export default function Chat() {
                 </small>
               </div>
               <span className="e2e-badge"><Icon name="lock" size={14} /> Encrypted</span>
+              {['audio', 'video'].map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => calls.startCall(peer, kind)}
+                  disabled={!peer.online || !connected || !!calls.call}
+                  aria-label={kind === 'audio' ? 'Voice call' : 'Video call'}
+                  title={!peer.online ? `${peer.username} is offline` : kind === 'audio' ? 'Voice call' : 'Video call'}
+                >
+                  <Icon name={kind === 'audio' ? 'phone' : 'video'} />
+                </button>
+              ))}
               <button
                 type="button"
                 className={`icon-btn ${infoOpen ? 'on' : ''}`}
@@ -711,6 +729,17 @@ export default function Chat() {
           onLeave={closeActiveRoom}
         />
       )}
+
+      <CallOverlay
+        call={calls.call}
+        localStream={calls.localStream}
+        remoteStream={calls.remoteStream}
+        onAccept={calls.accept}
+        onDecline={calls.decline}
+        onHangup={calls.hangup}
+        onMute={calls.toggleMute}
+        onCamera={calls.toggleCamera}
+      />
 
       {profileOpen && (
         <ProfileDialog user={user} connected={connected} onClose={() => setProfileOpen(false)} onSignOut={signOut} />
