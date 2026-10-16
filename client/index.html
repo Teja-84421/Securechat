@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#0a0f24" />
+    <meta name="theme-color" content="#0e1317" />
     <meta name="color-scheme" content="dark light" />
     <meta name="description" content="SecureChat: private end-to-end encrypted rooms for two, with chat, voice notes and calls." />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -21,7 +21,7 @@
         var t = localStorage.getItem('securechat_theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
         document.documentElement.dataset.theme = t;
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'light' ? '#eef0f8' : '#0a0f24');
+        if (m) m.setAttribute('content', t === 'light' ? '#f3f6f8' : '#0e1317');
       } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

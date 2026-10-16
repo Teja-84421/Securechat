@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar';
 import Icon from './Icons';
-import { setSpeaker } from '../audioRoute';
+import { setSpeaker, releaseSpeaker } from '../audioRoute';
 
 // Full-screen call UI: incoming-call screen, "calling…" screen and the in-call view.
 function attach(ref, stream) {
@@ -32,8 +32,17 @@ export default function CallOverlay({ call, localStream, remoteStream, onAccept,
 
   // Speaker on = loudspeaker / full volume, off = earpiece / quieter (re-applied when the stream arrives)
   const speakerOn = call?.speaker !== false;
+  const inCall = !!call;
   useEffect(() => {
-    if (remoteRef.current) setSpeaker(remoteRef.current, speakerOn);
+    if (!inCall) releaseSpeaker();
+  }, [inCall]);
+  useEffect(() => {
+    const el = remoteRef.current;
+    if (!el) return undefined;
+    const apply = () => setSpeaker(el, speakerOn);
+    apply();
+    remoteStream?.addEventListener('addtrack', apply); // the voice track can arrive after the video track
+    return () => remoteStream?.removeEventListener('addtrack', apply);
   }, [speakerOn, remoteStream, layoutKey]);
 
   if (!call) return null;

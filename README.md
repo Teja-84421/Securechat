@@ -16,6 +16,7 @@ Register → Login → User list → Real-time chat → Encrypt → Send ciphert
 - **Profile** dialog with your account details
 - **Audio and video calls** (WebRTC, peer-to-peer and encrypted)
 - **Call history** inside each chat (completed, missed, declined, cancelled, with duration and a Call back button)
+- **Simple, calm design:** one teal brand colour on neutral surfaces, light and dark themes
 - **Mobile-first app:** installable (PWA), keyboard-aware, Back button support, works offline-friendly
 - **Read receipts:** one tick = sent, two ticks = delivered, two blue ticks = seen
 - User list, user search, online/offline status, typing indicator, message timestamps, unread badges
@@ -208,10 +209,11 @@ How it works (WebRTC):
   direct connections; then add a TURN relay with `VITE_TURN_URL`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL` in
   the frontend environment (Vercel) and redeploy.
 - Browsers only allow camera and microphone on `localhost` or over HTTPS, and the user must allow access.
-- **Speaker button** (voice and video calls): on phones whose browser exposes both a loudspeaker and an earpiece
-  (for example Chrome on Android) it really switches the sound between them. On laptops and in browsers without that
-  feature (Safari, Firefox) it switches between full and quieter volume and never overrides the speakers or headphones
-  you are already using. It starts on.
+- **Speaker button** (voice and video calls): **on** = loud and full; **off** = about 20 dB (10 times) quieter and
+  thinner, like holding a phone to your ear. It works through the Web Audio API (voice, filters, gain, limiter), so it
+  behaves the same on Android, iPhone and laptops. (Changing `<audio>.volume` does not work on iPhones and barely
+  changes anything on Android.) On phones whose browser exposes a real earpiece and loudspeaker output, the real output is
+  switched instead. It starts on.
 
 ### Read receipts and call history
 

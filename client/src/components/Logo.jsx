@@ -1,4 +1,4 @@
-// A wax-seal style mark: an amber seal with a keyhole
+// A seal mark with a keyhole, in the brand colour
 export default function Logo({ size = 28, text = true }) {
   return (
     <span className="logo">

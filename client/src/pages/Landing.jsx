@@ -97,7 +97,7 @@ export default function Landing() {
       <main>
         <section className="hero">
           <div className="hero-copy">
-            <h1>Private rooms for two.</h1>
+            <h1>Private rooms <span className="hl">for two.</span></h1>
             <p>
               Create a room, share a six-character code, and talk. Every message and voice note is locked in your
               browser before it leaves, so the server only ever carries scrambled data.

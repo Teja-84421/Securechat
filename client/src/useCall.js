@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { primeAudio } from './audioRoute';
 
 // Audio / video calls with WebRTC.
 //
@@ -323,6 +324,7 @@ export function useCall({ socketRef, connected, onNotice }) {
   const startCall = useCallback(
     async (peer, kind) => {
       if (callRef.current) return;
+      primeAudio(); // inside the tap, so the phone lets the call's sound play
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
         notice('Calls need a modern browser on a secure (HTTPS) connection.');
         return;
@@ -358,6 +360,7 @@ export function useCall({ socketRef, connected, onNotice }) {
   const accept = useCallback(async () => {
     const cur = callRef.current;
     if (!cur || cur.direction !== 'in' || cur.phase !== 'ringing') return;
+    primeAudio(); // inside the tap, so the phone lets the call's sound play
     tone().stop();
     update({ phase: 'connecting' });
     let stream;

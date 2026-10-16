@@ -12,7 +12,7 @@ function apply(theme) {
   const root = document.documentElement;
   root.classList.add('theme-switching'); // enables a short colour cross-fade (see index.css)
   root.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#eef0f8' : '#0a0f24');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f3f6f8' : '#0e1317');
   setTimeout(() => root.classList.remove('theme-switching'), 350);
 }
 
