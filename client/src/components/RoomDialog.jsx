@@ -118,6 +118,10 @@ export default function RoomDialog({ initialTab = 'create', onClose, onChanged, 
               inputMode="text"
               autoCapitalize="characters"
               autoComplete="off"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="go"
               spellCheck="false"
               aria-label="Room code"
             />

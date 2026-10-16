@@ -98,15 +98,15 @@ export default function Auth({ mode }) {
           {isRegister ? (
             <>
               <label>Username
-                <input value={form.username} onChange={set('username')} autoComplete="username" maxLength={20} />
+                <input value={form.username} onChange={set('username')} autoComplete="username" maxLength={20} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" />
               </label>
               <label>Email
-                <input type="email" value={form.email} onChange={set('email')} autoComplete="email" maxLength={100} />
+                <input type="email" inputMode="email" value={form.email} onChange={set('email')} autoComplete="email" maxLength={100} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" />
               </label>
             </>
           ) : (
             <label>Username or email
-              <input value={form.identifier} onChange={set('identifier')} autoComplete="username" />
+              <input value={form.identifier} onChange={set('identifier')} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" />
             </label>
           )}
           <label>Password
@@ -115,6 +115,7 @@ export default function Auth({ mode }) {
               value={form.password}
               onChange={set('password')}
               autoComplete={isRegister ? 'new-password' : 'current-password'}
+              enterKeyHint={isRegister ? 'next' : 'go'}
               maxLength={72}
             />
           </label>

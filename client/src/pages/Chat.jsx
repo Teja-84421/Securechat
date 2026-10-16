@@ -15,6 +15,9 @@ import ProfileDialog from '../components/ProfileDialog';
 import EmojiPicker from '../components/EmojiPicker';
 import CallOverlay from '../components/CallOverlay';
 import CallLogItem from '../components/CallLogItem';
+import InstallBanner from '../components/InstallBanner';
+import { useBackButton } from '../useBackButton';
+import { useIsMobile } from '../viewport';
 import { useCall } from '../useCall';
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // keep in sync with server/socket.js
@@ -56,6 +59,9 @@ export default function Chat() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [newBelow, setNewBelow] = useState(false); // new messages arrived while I was reading older ones
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [showOffline, setShowOffline] = useState(false);
 
   const socketRef = useRef(null);
   const roomsRef = useRef([]);
@@ -65,6 +71,9 @@ export default function Chat() {
   const iAmTyping = useRef(false);
   const stopTypingTimer = useRef(null);
   const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
+  const atBottomRef = useRef(true);
+  const wasConnected = useRef(false);
   const inputRef = useRef(null);
   const voiceUrls = useRef(new Map()); // message id -> decrypted audio object URL
   const noticeTimer = useRef(null);
@@ -79,6 +88,13 @@ export default function Chat() {
   usersRef.current = peers;
   const peer = peers.find((u) => u.id === activeId) || null;
   const activeRoom = rooms.find((r) => r.peer?.id === activeId) || null;
+
+  // On phones the Back button / gesture closes the chat, the details panel or a dialog instead of leaving the app
+  const isMobile = useIsMobile();
+  useBackButton(isMobile && !!activeId, () => closeChat());
+  useBackButton(isMobile && infoOpen && !!peer, () => setInfoOpen(false));
+  useBackButton(isMobile && profileOpen, () => setProfileOpen(false));
+  useBackButton(isMobile && !!roomDialog, () => setRoomDialog(null));
 
   // Messages and finished calls in one timeline, oldest first
   const timeline = useMemo(
@@ -157,15 +173,77 @@ export default function Chat() {
     socketRef.current?.emit('messages:read', { from: peerId });
   }, []);
 
+  // Reload the open conversation (used after the phone was asleep / offline, so nothing is missed)
+  const refreshActive = useCallback(async () => {
+    const id = activeRef.current;
+    if (!id) return;
+    try {
+      const [{ messages: raw, calls: rawCalls }, p] = await Promise.all([api.history(id), getPeer(id)]);
+      const view = await Promise.all(raw.map(async (m) => toView(m, await decryptRow(m, p))));
+      if (activeRef.current === id) {
+        setMessages(view);
+        setCallLog(rawCalls || []);
+        markRead(id);
+      }
+    } catch {
+      /* the next event will try again */
+    }
+  }, [getPeer, toView, decryptRow, markRead]);
+
   useEffect(() => {
-    const onBackInFront = () => activeRef.current && markRead(activeRef.current);
+    const onBackInFront = () => {
+      if (document.visibilityState !== 'visible') return;
+      const id = activeRef.current;
+      if (id) {
+        markRead(id);
+        setUnread((u) => (u[id] ? { ...u, [id]: 0 } : u));
+      }
+      // Phones suspend connections in the background: reconnect as soon as the app is back
+      const s = socketRef.current;
+      if (s && !s.connected) s.connect();
+    };
+    const onOnline = () => {
+      setOnline(true);
+      const s = socketRef.current;
+      if (s && !s.connected) s.connect();
+    };
+    const onOffline = () => setOnline(false);
     window.addEventListener('focus', onBackInFront);
     document.addEventListener('visibilitychange', onBackInFront);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
     return () => {
       window.removeEventListener('focus', onBackInFront);
       document.removeEventListener('visibilitychange', onBackInFront);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
     };
   }, [markRead]);
+
+  // Show the "reconnecting" banner only if it lasts (no flicker on a quick blip)
+  useEffect(() => {
+    if (connected) {
+      setShowOffline(false);
+      return undefined;
+    }
+    const t = setTimeout(() => setShowOffline(true), 1500);
+    return () => clearTimeout(t);
+  }, [connected]);
+
+  // Unread count in the browser tab title and on the home-screen icon (installed app)
+  useEffect(() => {
+    document.title = unreadTotal > 0 ? `(${unreadTotal}) SecureChat` : 'SecureChat';
+    if ('setAppBadge' in navigator) {
+      (unreadTotal > 0 ? navigator.setAppBadge(unreadTotal) : navigator.clearAppBadge()).catch(() => {});
+    }
+  }, [unreadTotal]);
+  useEffect(
+    () => () => {
+      document.title = 'SecureChat';
+      if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+    },
+    []
+  );
 
   // ---- Socket.IO connection (JWT sent in the handshake) ----
   useEffect(() => {
@@ -176,6 +254,8 @@ export default function Chat() {
     socket.on('connect', () => {
       setConnected(true);
       loadRooms(); // refresh online status after (re)connecting
+      if (wasConnected.current) refreshActive(); // reconnected: catch up on anything missed while away
+      wasConnected.current = true;
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', (err) => {
@@ -211,7 +291,10 @@ export default function Chat() {
         const text = await decryptRow(m, p);
         setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, toView(m, text)]));
         setTyping((t) => ({ ...t, [otherId]: false }));
-        if (m.sender_id !== user.id) markRead(otherId); // I'm looking at this chat right now
+        if (m.sender_id !== user.id) {
+          if (document.visibilityState === 'visible' && document.hasFocus()) markRead(otherId); // I'm looking at it right now
+          else setUnread((u) => ({ ...u, [otherId]: (u[otherId] || 0) + 1 })); // app in the background: count it
+        }
       } else if (m.sender_id !== user.id) {
         setUnread((u) => ({ ...u, [otherId]: (u[otherId] || 0) + 1 }));
       }
@@ -265,10 +348,42 @@ export default function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stay at the bottom only when a message is added (not for reactions/edits)
+  // Follow new messages only if I'm already at the bottom (or I sent it); otherwise offer a "new messages" button
+  const scrollToBottom = useCallback((behavior = 'smooth') => {
+    bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+    atBottomRef.current = true;
+    setNewBelow(false);
+  }, []);
+
+  const lastLen = useRef(0);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, callLog.length, typing, activeId]);
+    const total = messages.length + callLog.length;
+    const last = messages[messages.length - 1];
+    const fromEmpty = lastLen.current === 0;
+    lastLen.current = total;
+    if (!total) return;
+    if (fromEmpty) scrollToBottom('auto'); // just opened the chat: jump straight to the newest
+    else if (atBottomRef.current || last?.mine) scrollToBottom('smooth');
+    else setNewBelow(true);
+  }, [messages.length, callLog.length, scrollToBottom]);
+
+  useEffect(() => {
+    if (typing[activeId] && atBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [typing, activeId]);
+
+  // The keyboard opened/closed: keep the newest message in view if I was at the bottom
+  useEffect(() => {
+    const onViewport = () => atBottomRef.current && bottomRef.current?.scrollIntoView({ block: 'end' });
+    window.addEventListener('sc:viewport', onViewport);
+    return () => window.removeEventListener('sc:viewport', onViewport);
+  }, []);
+
+  const handleMessagesScroll = (e) => {
+    const el = e.currentTarget;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (atBottomRef.current) setNewBelow(false);
+    if (menu) setMenu(null);
+  };
 
   async function selectUser(id) {
     stopTyping();
@@ -277,6 +392,9 @@ export default function Chat() {
     setUnread((u) => ({ ...u, [id]: 0 }));
     setMessages([]);
     setCallLog([]);
+    lastLen.current = 0;
+    atBottomRef.current = true;
+    setNewBelow(false);
     setError('');
     setDraft('');
     setMenu(null);
@@ -523,6 +641,8 @@ export default function Chat() {
           </button>
         </header>
 
+        <InstallBanner />
+
         {peers.length > 0 && (
           <label className="search-wrap">
             <Icon name="search" size={18} />
@@ -653,7 +773,7 @@ export default function Chat() {
               </button>
             </header>
 
-            <div className="messages" onScroll={() => menu && setMenu(null)}>
+            <div className="messages" ref={messagesRef} onScroll={handleMessagesScroll}>
               {loadingHistory && <div className="empty-note">Decrypting messages…</div>}
               {!loadingHistory && timeline.length === 0 && (
                 <div className="first-hello">
@@ -709,6 +829,12 @@ export default function Chat() {
               <div ref={bottomRef} />
             </div>
 
+            {newBelow && (
+              <button type="button" className="scroll-down" onClick={() => scrollToBottom('smooth')}>
+                <Icon name="chevron" size={16} /> New messages
+              </button>
+            )}
+
             {error && (
               <div className="form-error chat-error" role="alert">
                 <span>{error}</span>
@@ -760,9 +886,13 @@ export default function Chat() {
                     maxLength={1000}
                     disabled={!canType}
                     aria-label="Message"
+                    enterKeyHint="send"
+                    autoComplete="off"
+                    autoCapitalize="sentences"
+                    autoCorrect="on"
                   />
                   {hasText ? (
-                    <button className="send-btn" disabled={!canType || !connected} aria-label={editing ? 'Save edit' : 'Send message'}>
+                    <button className="send-btn" onPointerDown={(e) => e.preventDefault()} disabled={!canType || !connected} aria-label={editing ? 'Save edit' : 'Send message'}>
                       <Icon name={editing ? 'check' : 'send'} size={20} />
                     </button>
                   ) : (
@@ -806,7 +936,14 @@ export default function Chat() {
         onMute={calls.toggleMute}
         onCamera={calls.toggleCamera}
         onSpeaker={calls.toggleSpeaker}
+        onFlip={calls.switchCamera}
       />
+
+      {showOffline && (
+        <div className="conn-banner" role="status">
+          <span className="spinner" aria-hidden="true" /> {online ? 'Reconnecting…' : 'You’re offline'}
+        </div>
+      )}
 
       {profileOpen && (
         <ProfileDialog user={user} connected={connected} onClose={() => setProfileOpen(false)} onSignOut={signOut} />

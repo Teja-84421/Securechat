@@ -18,7 +18,7 @@ function Timer({ since }) {
   return <>{String(Math.floor(s / 60)).padStart(2, '0')}:{String(s % 60).padStart(2, '0')}</>;
 }
 
-export default function CallOverlay({ call, localStream, remoteStream, onAccept, onDecline, onHangup, onMute, onCamera, onSpeaker }) {
+export default function CallOverlay({ call, localStream, remoteStream, onAccept, onDecline, onHangup, onMute, onCamera, onSpeaker, onFlip }) {
   const remoteRef = useRef(null);
   const localRef = useRef(null);
 
@@ -49,7 +49,7 @@ export default function CallOverlay({ call, localStream, remoteStream, onAccept,
   return (
     <div className={`call-overlay ${hasRemoteVideo ? 'has-video' : ''}`} role="dialog" aria-modal="true" aria-label={`${kind} call with ${peer.username}`}>
       {/* The remote person: video fills the screen, audio plays through a hidden element */}
-      {!incoming && (isVideo ? <video ref={remoteRef} className="call-remote" autoPlay playsInline /> : <audio ref={remoteRef} autoPlay />)}
+      {!incoming && (isVideo ? <video ref={remoteRef} className={`call-remote ${hasRemoteVideo ? '' : 'idle'}`} autoPlay playsInline /> : <audio ref={remoteRef} autoPlay />)}
 
       <div className="call-top">
         <strong>{peer.username}</strong>
@@ -67,7 +67,7 @@ export default function CallOverlay({ call, localStream, remoteStream, onAccept,
 
       {/* My own camera (small picture-in-picture) */}
       {!incoming && isVideo && localStream && (
-        <video ref={localRef} className={`call-local ${call.cameraOff ? 'cam-off' : ''}`} autoPlay playsInline muted />
+        <video ref={localRef} className={`call-local ${call.cameraOff ? 'cam-off' : ''} ${call.facing === 'environment' ? 'back-cam' : ''}`} autoPlay playsInline muted />
       )}
 
       <div className="call-bar">
@@ -87,14 +87,19 @@ export default function CallOverlay({ call, localStream, remoteStream, onAccept,
                 <Icon name={call.muted ? 'micOff' : 'mic'} size={24} />
               </button>
             )}
-            {phase !== 'ringing' && (
-              <button type="button" className={`call-btn ${speakerOn ? 'on' : ''}`} onClick={onSpeaker} aria-label={speakerOn ? 'Turn speaker off' : 'Turn speaker on'} aria-pressed={speakerOn} title={speakerOn ? 'Speaker on' : 'Speaker off'}>
-                <Icon name={speakerOn ? 'speaker' : 'speakerLow'} size={24} />
-              </button>
-            )}
             {isVideo && phase !== 'ringing' && (
               <button type="button" className={`call-btn ${call.cameraOff ? 'off' : ''}`} onClick={onCamera} aria-label={call.cameraOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={!!call.cameraOff} title={call.cameraOff ? 'Turn camera on' : 'Turn camera off'}>
                 <Icon name={call.cameraOff ? 'videoOff' : 'video'} size={24} />
+              </button>
+            )}
+            {isVideo && phase !== 'ringing' && call.canFlip && (
+              <button type="button" className="call-btn" onClick={onFlip} aria-label="Switch camera" title="Switch camera">
+                <Icon name="flip" size={24} />
+              </button>
+            )}
+            {phase !== 'ringing' && (
+              <button type="button" className={`call-btn ${speakerOn ? 'on' : ''}`} onClick={onSpeaker} aria-label={speakerOn ? 'Turn speaker off' : 'Turn speaker on'} aria-pressed={speakerOn} title={speakerOn ? 'Speaker on' : 'Speaker off'}>
+                <Icon name={speakerOn ? 'speaker' : 'speakerLow'} size={24} />
               </button>
             )}
             <button type="button" className="call-btn end" onClick={onHangup} aria-label={phase === 'ringing' ? 'Cancel call' : 'End call'} title={phase === 'ringing' ? 'Cancel' : 'End call'}>

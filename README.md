@@ -16,6 +16,7 @@ Register → Login → User list → Real-time chat → Encrypt → Send ciphert
 - **Profile** dialog with your account details
 - **Audio and video calls** (WebRTC, peer-to-peer and encrypted)
 - **Call history** inside each chat (completed, missed, declined, cancelled, with duration and a Call back button)
+- **Mobile-first app:** installable (PWA), keyboard-aware, Back button support, works offline-friendly
 - **Read receipts:** one tick = sent, two ticks = delivered, two blue ticks = seen
 - User list, user search, online/offline status, typing indicator, message timestamps, unread badges
 - One-to-one real-time messaging over Socket.IO (WebSocket)
@@ -166,6 +167,29 @@ users, log in, and chat. Check the `messages` table to see only ciphertext:
 ```sql
 SELECT sender_id, receiver_id, ciphertext, iv, created_at FROM messages;
 ```
+
+### Mobile app experience
+
+SecureChat is built phone-first and can be **installed like an app** (Android/Chrome: the *Get the app* card or
+Profile > Install app; iPhone/iPad: Share > *Add to Home Screen*). What it does for phone users:
+
+- **Fits the screen:** one pane at a time with a 3-tab bottom bar (Chats, Rooms, Profile), safe areas for notches and the
+  home indicator, 44px touch targets, 16px inputs (no iPhone zoom), bottom-sheet dialogs, landscape support.
+- **Keyboard-aware:** the layout follows the *visible* area, so the message box is never hidden behind the keyboard;
+  tapping Send keeps the keyboard open.
+- **Back button / gesture:** closes the chat, the details panel or a dialog instead of leaving the app.
+- **Reading is never interrupted:** new messages only auto-scroll if you are already at the bottom, otherwise a
+  *New messages* button appears. Pull-to-refresh can no longer reload the app mid-chat.
+- **Survives bad networks:** reconnects as soon as the app is back in front, reloads the open chat so nothing sent while
+  the phone slept is missing, shows a *Reconnecting...* banner, and never logs you out just because you are offline.
+  Free hosting sleeps when idle, so the page wakes the server early and explains a slow first load.
+- **App feel:** installable icon, splash colours, unread count in the tab title and on the home-screen icon, haptic tick on
+  long-press, ringing vibration, the screen stays awake during calls, front/back camera switch in video calls.
+- **Offline shell:** a service worker (`client/public/sw.js`) caches the built app files so it opens instantly, even
+  offline. It never caches the API, WebSocket or other sites. Chat data always comes live from the server.
+
+Limits: a web app cannot ring or notify when it is fully closed (that needs push notifications, which would have to
+be built separately; the server cannot read message text, so notifications could only say *new message*).
 
 ### Audio and video calls
 

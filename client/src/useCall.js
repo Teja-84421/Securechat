@@ -63,6 +63,7 @@ function createTone() {
   const stop = () => {
     clearInterval(timer);
     timer = null;
+    navigator.vibrate?.(0);
     if (ctx) {
       ctx.close().catch(() => {});
       ctx = null;
@@ -80,6 +81,7 @@ function createTone() {
       if (!ctx) return;
       const t = ctx.currentTime;
       if (kind === 'incoming') {
+        navigator.vibrate?.([300, 150, 300]); // buzz in time with the ring (phones)
         beep(880, t, 0.18, 0.12);
         beep(660, t + 0.22, 0.18, 0.12);
         beep(880, t + 0.6, 0.18, 0.12);
@@ -107,6 +109,25 @@ export function useCall({ socketRef, connected, onNotice }) {
   const queued = useRef([]); // ICE candidates that arrived before the remote description
   const toneRef = useRef(null);
   const dropTimer = useRef(null);
+  const wakeRef = useRef(null);
+
+  // Keep the phone's screen on during a call (otherwise it locks and the call can drop)
+  const holdScreen = async () => {
+    try {
+      if (!wakeRef.current && navigator.wakeLock) {
+        wakeRef.current = await navigator.wakeLock.request('screen');
+        wakeRef.current.addEventListener?.('release', () => {
+          wakeRef.current = null;
+        });
+      }
+    } catch {
+      /* not supported, or the battery saver said no: the call still works */
+    }
+  };
+  const releaseScreen = () => {
+    wakeRef.current?.release?.().catch(() => {});
+    wakeRef.current = null;
+  };
   const noticeRef = useRef(onNotice);
   noticeRef.current = onNotice;
 
@@ -123,6 +144,7 @@ export function useCall({ socketRef, connected, onNotice }) {
   // Stop everything: ringtone, peer connection, camera and microphone
   const cleanup = useCallback(() => {
     toneRef.current?.stop();
+    releaseScreen();
     clearTimeout(dropTimer.current);
     if (pcRef.current) {
       pcRef.current.onicecandidate = pcRef.current.ontrack = pcRef.current.onconnectionstatechange = null;
@@ -164,6 +186,7 @@ export function useCall({ socketRef, connected, onNotice }) {
       if (state === 'connected') {
         clearTimeout(dropTimer.current);
         tone().stop();
+        holdScreen();
         update({ phase: 'active', startedAt: callRef.current?.startedAt || Date.now(), unstable: false });
       } else if (state === 'disconnected') {
         update({ unstable: true });
@@ -263,6 +286,13 @@ export function useCall({ socketRef, connected, onNotice }) {
     };
   }, [connected, socketRef, send, update, createPeer, cleanup, end]);
 
+  // The wake lock is released when the app goes to the background: take it again when we're back
+  useEffect(() => {
+    const again = () => document.visibilityState === 'visible' && callRef.current?.phase === 'active' && holdScreen();
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, []);
+
   // If the signalling connection drops, the server ends the call for the other person too: end it here as well
   useEffect(() => {
     if (!connected && callRef.current) end('Connection lost.', false);
@@ -277,6 +307,17 @@ export function useCall({ socketRef, connected, onNotice }) {
     },
     [cleanup, socketRef]
   );
+
+  // Only offer the flip-camera button when the device has more than one camera
+  const detectFlip = (callId) => {
+    if (callRef.current?.kind !== 'video') return;
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then((devices) => {
+        if (callRef.current?.callId === callId) update({ canFlip: devices.filter((d) => d.kind === 'videoinput').length > 1 });
+      })
+      .catch(() => {});
+  };
 
   // ---- Actions used by the UI ----
   const startCall = useCallback(
@@ -302,6 +343,7 @@ export function useCall({ socketRef, connected, onNotice }) {
       }
       localRef.current = stream;
       setLocalStream(stream);
+      detectFlip(callId);
       tone().start('outgoing');
       socketRef.current?.emit('call:invite', { to: peer.id, kind, callId }, (res) => {
         if (!res?.ok && callRef.current?.callId === callId) {
@@ -333,6 +375,7 @@ export function useCall({ socketRef, connected, onNotice }) {
     }
     localRef.current = stream;
     setLocalStream(stream);
+    detectFlip(cur.callId);
     socketRef.current?.emit('call:accept', { callId: cur.callId }, (res) => {
       if (!res?.ok && callRef.current?.callId === cur.callId) {
         cleanup();
@@ -356,6 +399,47 @@ export function useCall({ socketRef, connected, onNotice }) {
     update({ muted: !track.enabled });
   }, [update]);
 
+  // Front <-> back camera (video calls on phones)
+  const switchCamera = useCallback(async () => {
+    const cur = callRef.current;
+    const stream = localRef.current;
+    if (!cur || cur.kind !== 'video' || !stream) return;
+    const next = cur.facing === 'environment' ? 'user' : 'environment';
+    const ask = (facing) =>
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    const old = stream.getVideoTracks()[0];
+    old?.stop(); // most phones can only open one camera at a time
+    let fresh;
+    let facing = next;
+    try {
+      fresh = await ask(next);
+    } catch {
+      try {
+        facing = cur.facing || 'user';
+        fresh = await ask(facing); // couldn't switch: go back to the camera we had
+      } catch {
+        notice('Could not switch the camera.');
+        return;
+      }
+    }
+    if (callRef.current?.callId !== cur.callId) {
+      fresh.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const track = fresh.getVideoTracks()[0];
+    track.enabled = !cur.cameraOff;
+    const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === 'video' || (!s.track && old));
+    try {
+      await sender?.replaceTrack(track);
+    } catch {
+      /* the picture may freeze for the other person, but the call goes on */
+    }
+    if (old) stream.removeTrack(old);
+    stream.addTrack(track);
+    setLocalStream(new MediaStream(stream.getTracks())); // a new object so the preview re-attaches
+    update({ facing });
+  }, [update]);
+
   const toggleCamera = useCallback(() => {
     const track = localRef.current?.getVideoTracks()[0];
     if (!track) return;
@@ -368,5 +452,5 @@ export function useCall({ socketRef, connected, onNotice }) {
     if (callRef.current) update({ speaker: callRef.current.speaker === false });
   }, [update]);
 
-  return { call, localStream, remoteStream, startCall, accept, decline, hangup, toggleMute, toggleCamera, toggleSpeaker };
+  return { call, localStream, remoteStream, startCall, accept, decline, hangup, toggleMute, toggleCamera, toggleSpeaker, switchCamera };
 }

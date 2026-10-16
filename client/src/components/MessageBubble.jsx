@@ -38,7 +38,10 @@ export default function MessageBubble({ m, myId, pos = 'single', onOpenMenu, onT
 
   // Long-press (touch) and right-click both open the menu
   const startPress = () => {
-    pressTimer.current = setTimeout(() => open('full'), 450);
+    pressTimer.current = setTimeout(() => {
+      navigator.vibrate?.(12); // tiny haptic tick on phones that support it
+      open('full');
+    }, 450);
   };
   const endPress = () => clearTimeout(pressTimer.current);
 

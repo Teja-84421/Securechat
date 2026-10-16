@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { api, getToken, setToken } from './api';
@@ -17,17 +17,32 @@ async function syncKeys(user) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(!!getToken());
+  const [offline, setOffline] = useState(false); // couldn't reach the server (not the same as "logged out")
+  const [slow, setSlow] = useState(false); // the server is taking long (free hosting wakes up slowly)
 
   // Restore session on page load
-  useEffect(() => {
+  const restore = useCallback(() => {
     if (!getToken()) return;
+    setOffline(false);
+    setLoading(true);
     api
       .me()
       .then(({ user }) => syncKeys(user))
       .then(setUser)
-      .catch(() => setToken(null))
+      .catch((err) => {
+        // Only a real "not logged in" answer ends the session. No signal in a tunnel must not log you out.
+        if (err.status === 401 || err.status === 403) setToken(null);
+        else setOffline(true);
+      })
       .finally(() => setLoading(false));
   }, []);
+  useEffect(restore, [restore]);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const t = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   const auth = useMemo(
     () => ({
@@ -49,7 +64,28 @@ export default function App() {
     [user]
   );
 
-  if (loading) return <div className="splash">Loading SecureChat…</div>;
+  if (loading) {
+    return (
+      <div className="splash">
+        <div className="splash-box">
+          <span className="spinner" aria-hidden="true" />
+          <p>Loading SecureChat…</p>
+          {slow && <small>Waking up the server, this can take up to a minute the first time.</small>}
+        </div>
+      </div>
+    );
+  }
+  if (offline) {
+    return (
+      <div className="splash">
+        <div className="splash-box">
+          <p><strong>Can’t reach SecureChat</strong></p>
+          <small>Check your internet connection. You are still logged in.</small>
+          <button type="button" className="btn btn-primary" onClick={restore}>Try again</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AuthContext.Provider value={auth}>

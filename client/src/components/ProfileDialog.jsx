@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import Avatar from './Avatar';
 import Icon from './Icons';
+import { useTheme } from '../theme';
+import { useInstall } from '../install';
 
 function signInMethod(u) {
   if (u.has_google && u.has_password) return 'Google and password';
@@ -13,6 +15,8 @@ function signInMethod(u) {
 export default function ProfileDialog({ user, connected, onClose, onSignOut }) {
   const [details, setDetails] = useState(user);
   const [error, setError] = useState('');
+  const [theme, toggleTheme] = useTheme();
+  const { canInstall, iosHint, promptInstall } = useInstall();
 
   useEffect(() => {
     api.me().then(({ user: fresh }) => setDetails((d) => ({ ...d, ...fresh }))).catch(() => setError('Could not refresh your details.'));
@@ -60,6 +64,18 @@ export default function ProfileDialog({ user, connected, onClose, onSignOut }) {
         </dl>
 
         {error && <div className="form-error" role="alert">{error}</div>}
+
+        <div className="profile-actions">
+          <button type="button" className="btn btn-ghost" onClick={toggleTheme}>
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} /> {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+          </button>
+          {canInstall && (
+            <button type="button" className="btn btn-ghost" onClick={promptInstall}>
+              <Icon name="download" size={18} /> Install app
+            </button>
+          )}
+        </div>
+        {!canInstall && iosHint && <p className="muted profile-hint">To install: tap Share, then “Add to Home Screen”.</p>}
 
         <button type="button" className="btn btn-ghost btn-danger-ghost" onClick={onSignOut}>
           <Icon name="logout" size={18} /> Log out

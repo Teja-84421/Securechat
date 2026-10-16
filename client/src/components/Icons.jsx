@@ -31,6 +31,8 @@ const paths = {
   checks: <><path d="M18 6 7 17l-5-5" /><path d="m22 10-7.5 7.5L13 16" /></>,
   speaker: <><path d="M11 5 6 9H2v6h4l5 4V5Z" /><path d="M19.1 4.9a10 10 0 0 1 0 14.2M15.5 8.5a5 5 0 0 1 0 7" /></>,
   speakerLow: <><path d="M11 5 6 9H2v6h4l5 4V5Z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></>,
+  download: <><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M5 19h14" /></>,
+  flip: <><path d="M21 4v6h-6" /><path d="M3 20v-6h6" /><path d="M3.5 10a8.5 8.5 0 0 1 14.6-3.4L21 10M3 14l2.9 3.4A8.5 8.5 0 0 0 20.5 14" /></>,
   shield: <path d="M12 3 5 6v5c0 5 3 8.5 7 10 4-1.5 7-5 7-10V6l-7-3Z" />,
 };
 

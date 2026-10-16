@@ -54,7 +54,7 @@ export default function GoogleSetupForm({ setup, onCancel }) {
         <input type="email" value={setup.email} readOnly disabled />
       </label>
       <label>Username
-        <input value={form.username} onChange={set('username')} autoComplete="username" maxLength={20} autoFocus />
+        <input value={form.username} onChange={set('username')} autoComplete="username" maxLength={20} autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" />
       </label>
       <label>Password
         <input type="password" value={form.password} onChange={set('password')} autoComplete="new-password" maxLength={72} />
